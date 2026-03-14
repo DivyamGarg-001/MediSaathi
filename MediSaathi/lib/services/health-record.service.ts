@@ -159,13 +159,13 @@ export class HealthRecordService {
       const fileName = `${userId}/${Date.now()}-${Math.random().toString(36).substring(2)}.${fileExt}`
 
       const { data, error } = await supabase.storage
-        .from('health-records')
+        .from('patient_records')
         .upload(fileName, file)
 
       if (error) throw error
 
       const { data: { publicUrl } } = supabase.storage
-        .from('health-records')
+        .from('patient_records')
         .getPublicUrl(fileName)
 
       return { url: publicUrl, error: null }

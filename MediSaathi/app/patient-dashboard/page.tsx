@@ -123,6 +123,9 @@ export default function PatientDashboard() {
                 <Button variant="outline" onClick={() => window.location.href = '/find-doctors'}>
                   Find Doctors
                 </Button>
+                <Button variant="destructive" onClick={() => window.location.href = '/patient/sos'}>
+                  Emergency SOS
+                </Button>
                 <Button variant="outline" onClick={logout}>
                   Sign Out
                 </Button>

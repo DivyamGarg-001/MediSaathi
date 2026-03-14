@@ -214,6 +214,15 @@ export default function PatientDashboard() {
     emergency_contact: false
   })
 
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [isUploadingRecord, setIsUploadingRecord] = useState(false)
+  const [recordUploadForm, setRecordUploadForm] = useState({
+    title: '',
+    type: 'lab_report',
+    date_recorded: new Date().toISOString().slice(0, 10),
+    file: null as File | null
+  })
+
   // Redirect unauthenticated users after auth finishes loading
   useEffect(() => {
     if (!authLoading && !user) {
@@ -342,6 +351,45 @@ export default function PatientDashboard() {
       alert('Failed to add family member. Please try again.')
     } finally {
       setIsAddingFamily(false)
+    }
+  }
+
+  const uploadHealthRecord = async () => {
+    if (!user || !recordUploadForm.title.trim() || !recordUploadForm.file) return
+
+    setIsUploadingRecord(true)
+    try {
+      const formData = new FormData()
+      formData.append('user_id', user.id)
+      formData.append('title', recordUploadForm.title.trim())
+      formData.append('type', recordUploadForm.type)
+      formData.append('date_recorded', recordUploadForm.date_recorded)
+      formData.append('file', recordUploadForm.file)
+
+      const response = await fetch('/api/health-records', {
+        method: 'POST',
+        body: formData
+      })
+
+      const result = await response.json()
+      if (!response.ok || !result.success) {
+        throw new Error(result.error || 'Failed to upload health record')
+      }
+
+      setRecordUploadForm({
+        title: '',
+        type: 'lab_report',
+        date_recorded: new Date().toISOString().slice(0, 10),
+        file: null
+      })
+      setIsUploadModalOpen(false)
+      await loadDashboardData()
+      alert('Health record uploaded successfully')
+    } catch (error) {
+      console.error('Error uploading health record:', error)
+      alert(error instanceof Error ? error.message : 'Failed to upload health record. Please try again.')
+    } finally {
+      setIsUploadingRecord(false)
     }
   }
 
@@ -844,10 +892,99 @@ export default function PatientDashboard() {
                     <CardTitle>Recent Health Records</CardTitle>
                     <CardDescription>Your latest medical documents</CardDescription>
                   </div>
-                  <Button size="sm">
-                    <Upload className="h-4 w-4 mr-1" />
-                    Upload
-                  </Button>
+                  <Dialog open={isUploadModalOpen} onOpenChange={setIsUploadModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button size="sm">
+                        <Upload className="h-4 w-4 mr-1" />
+                        Upload
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="sm:max-w-[500px]">
+                      <DialogHeader>
+                        <DialogTitle>Upload Health Record</DialogTitle>
+                        <DialogDescription>
+                          Upload PDF, image, or Word documents to your secure health records.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4 py-2">
+                        <div className="grid gap-2">
+                          <Label htmlFor="record-title">Title *</Label>
+                          <Input
+                            id="record-title"
+                            value={recordUploadForm.title}
+                            onChange={(e) => setRecordUploadForm(prev => ({ ...prev, title: e.target.value }))}
+                            placeholder="e.g. Blood Test - Jan 2026"
+                          />
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor="record-type">Record Type *</Label>
+                          <Select
+                            value={recordUploadForm.type}
+                            onValueChange={(value) => setRecordUploadForm(prev => ({ ...prev, type: value }))}
+                          >
+                            <SelectTrigger id="record-type">
+                              <SelectValue placeholder="Select record type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="lab_report">Lab Report</SelectItem>
+                              <SelectItem value="prescription">Prescription</SelectItem>
+                              <SelectItem value="xray">X-Ray</SelectItem>
+                              <SelectItem value="scan">Scan</SelectItem>
+                              <SelectItem value="consultation">Consultation</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor="record-date">Record Date *</Label>
+                          <Input
+                            id="record-date"
+                            type="date"
+                            value={recordUploadForm.date_recorded}
+                            onChange={(e) => setRecordUploadForm(prev => ({ ...prev, date_recorded: e.target.value }))}
+                          />
+                        </div>
+
+                        <div className="grid gap-2">
+                          <Label htmlFor="record-file">File *</Label>
+                          <Input
+                            id="record-file"
+                            type="file"
+                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                            onChange={(e) => {
+                              const selectedFile = e.target.files?.[0] || null
+                              setRecordUploadForm(prev => ({ ...prev, file: selectedFile }))
+                            }}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Allowed: PDF, PNG, JPG, WEBP, DOC, DOCX (max 10MB)
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex justify-end gap-2">
+                        <Button
+                          variant="outline"
+                          onClick={() => setIsUploadModalOpen(false)}
+                          disabled={isUploadingRecord}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          onClick={uploadHealthRecord}
+                          disabled={
+                            isUploadingRecord ||
+                            !recordUploadForm.title.trim() ||
+                            !recordUploadForm.file
+                          }
+                        >
+                          {isUploadingRecord ? 'Uploading...' : 'Upload Record'}
+                        </Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
                 </CardHeader>
                 <CardContent>
                   {dashboardData.healthRecords.length > 0 ? (
@@ -869,7 +1006,16 @@ export default function PatientDashboard() {
                             <Badge variant="secondary" className="text-xs">
                               {record.type.replace('_', ' ')}
                             </Badge>
-                            <Button variant="ghost" size="sm">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                if (record.file_url) {
+                                  window.open(record.file_url, '_blank', 'noopener,noreferrer')
+                                }
+                              }}
+                              disabled={!record.file_url}
+                            >
                               <Download className="h-3 w-3" />
                             </Button>
                           </div>
@@ -880,7 +1026,7 @@ export default function PatientDashboard() {
                     <div className="text-center py-8">
                       <FileText className="mx-auto h-12 w-12 text-gray-400" />
                       <p className="mt-2 text-gray-500">No health records yet</p>
-                      <Button className="mt-4" size="sm">
+                      <Button className="mt-4" size="sm" onClick={() => setIsUploadModalOpen(true)}>
                         <Upload className="h-4 w-4 mr-1" />
                         Upload First Record
                       </Button>
@@ -1048,7 +1194,12 @@ export default function PatientDashboard() {
                     <CalendarIcon className="h-4 w-4 mr-2" />
                     Book Appointment
                   </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full justify-start"
+                    onClick={() => router.push('/patient/sos')}
+                  >
                     <Phone className="h-4 w-4 mr-2" />
                     Call Emergency
                   </Button>

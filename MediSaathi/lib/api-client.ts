@@ -122,10 +122,36 @@ class ApiClient {
       body: JSON.stringify({ action: 'add-record', recordData })
     }),
     
-    uploadFile: (recordData: any, file: any) => this.request('/health-records', {
-      method: 'POST',
-      body: JSON.stringify({ action: 'upload-file', recordData, file })
-    }),
+    uploadFile: async (recordData: any, file: File) => {
+      try {
+        const formData = new FormData()
+        Object.entries(recordData || {}).forEach(([key, value]) => {
+          if (value !== undefined && value !== null) {
+            formData.append(key, String(value))
+          }
+        })
+        formData.append('file', file)
+
+        const response = await fetch(`${this.baseURL}/health-records`, {
+          method: 'POST',
+          body: formData
+        })
+
+        const result = await response.json()
+        if (!response.ok) {
+          throw new Error(result.error || `HTTP error! status: ${response.status}`)
+        }
+
+        return result
+      } catch (error) {
+        console.error('API Error [/health-records uploadFile]:', error)
+        return {
+          data: null,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          success: false
+        }
+      }
+    },
     
     updateRecord: (recordId: string, updates: any) => this.request('/health-records', {
       method: 'PUT',
@@ -164,6 +190,11 @@ class ApiClient {
     deleteReading: (vitalId: string) => this.request(`/vital-signs?vitalId=${vitalId}`, {
       method: 'DELETE'
     }),
+  }
+
+  // Emergency SOS APIs
+  emergencySos = {
+    getSnapshot: (userId: string) => this.request(`/emergency-sos?userId=${userId}`),
   }
 
   // Appointments APIs
