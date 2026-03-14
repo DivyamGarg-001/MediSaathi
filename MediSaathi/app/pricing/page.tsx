@@ -65,7 +65,7 @@ export default function PricingPage() {
                 </CardContent>
                 <CardFooter>
                   <Button className="w-full bg-transparent" variant="outline" asChild>
-                    <Link href="/signup">Get Started</Link>
+                    <Link href="/auth/signup">Get Started</Link>
                   </Button>
                 </CardFooter>
               </Card>

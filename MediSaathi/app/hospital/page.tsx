@@ -44,7 +44,7 @@ export default function HospitalPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <Button size="lg" asChild>
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Request Demo
                     <ArrowRight className="ml-2 size-5" />
                   </Link>
@@ -228,7 +228,7 @@ export default function HospitalPage() {
                     </li>
                   </ul>
                   <Button variant="outline" className="w-full bg-transparent" asChild>
-                    <Link href="/signup">Get Started</Link>
+                    <Link href="/auth/signup">Get Started</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -271,7 +271,7 @@ export default function HospitalPage() {
                     </li>
                   </ul>
                   <Button className="w-full" asChild>
-                    <Link href="/signup">Get Started</Link>
+                    <Link href="/auth/signup">Get Started</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -330,7 +330,7 @@ export default function HospitalPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
                 <Button size="lg" asChild>
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Request Demo
                     <ArrowRight className="ml-2 size-5" />
                   </Link>

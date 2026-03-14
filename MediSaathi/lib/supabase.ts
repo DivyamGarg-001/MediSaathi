@@ -5,6 +5,15 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey)
 
+// Admin client with service role key — bypasses RLS, use only in server-side API routes
+// Falls back to anon key on the client bundle (where SERVICE_ROLE_KEY is undefined) to prevent crash;
+// the admin client is only actually invoked server-side where the real key is present.
+export const supabaseAdmin = createClient(
+  supabaseUrl,
+  process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseAnonKey,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
+
 // Database Types
 export type Database = {
   public: {
@@ -292,6 +301,7 @@ export type Database = {
           appointment_time: string
           duration: number
           type: 'consultation' | 'follow_up' | 'emergency' | 'telemedicine'
+          is_urgent: boolean
           status: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
           reason: string
           notes: string | null
@@ -310,6 +320,7 @@ export type Database = {
           appointment_time: string
           duration?: number
           type: 'consultation' | 'follow_up' | 'emergency' | 'telemedicine'
+          is_urgent?: boolean
           status?: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
           reason: string
           notes?: string | null
@@ -328,6 +339,7 @@ export type Database = {
           appointment_time?: string
           duration?: number
           type?: 'consultation' | 'follow_up' | 'emergency' | 'telemedicine'
+          is_urgent?: boolean
           status?: 'scheduled' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled' | 'no_show'
           reason?: string
           notes?: string | null

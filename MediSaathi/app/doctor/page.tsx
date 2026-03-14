@@ -44,7 +44,7 @@ export default function DoctorPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <Button size="lg" asChild>
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Join as Doctor
                     <ArrowRight className="ml-2 size-5" />
                   </Link>
@@ -322,7 +322,7 @@ export default function DoctorPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
                 <Button size="lg" asChild>
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Join as Doctor
                     <ArrowRight className="ml-2 size-5" />
                   </Link>

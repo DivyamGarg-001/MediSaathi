@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import { AppointmentService } from '@/lib/services/appointment.service'
 
 export async function GET(request: NextRequest) {
@@ -22,7 +22,7 @@ export async function GET(request: NextRequest) {
           appointment_time,
           status,
           notes,
-          appointment_type,
+          type,
           is_urgent,
           patients:patient_id (
             id,

@@ -5,19 +5,27 @@ node_modules
 
 # Testing
 /coverage
+**/coverage
 
 # Next.js
-/.next/
-/out/
+**/.next/
+**/out/
 
 # Production
 /build
+**/build
+
+# TypeScript
+*.tsbuildinfo
 
 # Environment variables
 .env
 .env.local
+.env.development
 .env.development.local
+.env.test
 .env.test.local
+.env.production
 .env.production.local
 
 # Logs
@@ -26,9 +34,11 @@ yarn-debug.log*
 yarn-error.log*
 lerna-debug.log*
 .pnpm-debug.log*
+*.log
 
 # OS files
 .DS_Store
+Thumbs.db
 *.pem
 
 # IDE files
@@ -36,6 +46,9 @@ lerna-debug.log*
 .idea/
 *.swp
 *.swo
+
+# Deployment
+.vercel
 
 # Misc
 *.bak

@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type HealthRecord = Database['public']['Tables']['health_records']['Row']

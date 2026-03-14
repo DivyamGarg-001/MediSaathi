@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type Hospital = Database['public']['Tables']['hospitals']['Row']
@@ -13,7 +13,7 @@ export class HospitalService {
         .from('hospitals')
         .select(`
           *,
-          users!hospitals_user_id_fkey(full_name, email, phone, avatar_url)
+          users:user_id(full_name, email, phone, avatar_url)
         `)
         .eq('user_id', userId)
         .single()
@@ -252,7 +252,7 @@ export class HospitalService {
         .select('specialty')
         .eq('hospital_id', hospitalId)
 
-      const departmentStats = hospital.departments.map(dept => ({
+      const departmentStats = (hospital.departments ?? []).map((dept: string) => ({
         name: dept,
         doctorCount: doctors?.filter(d => d.specialty === dept).length || 0
       }))

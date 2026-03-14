@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type VitalSign = Database['public']['Tables']['vital_signs']['Row']

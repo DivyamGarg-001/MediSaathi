@@ -60,7 +60,7 @@ export default function FeaturesPage() {
 
             <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
               <Button size="lg" asChild className="text-base">
-                <Link href="/signup">
+                <Link href="/auth/signup">
                   Try All Features Free
                   <ArrowRight className="ml-2 size-5" />
                 </Link>
@@ -596,7 +596,7 @@ export default function FeaturesPage() {
               </p>
               <div className="flex flex-col sm:flex-row gap-4 justify-center pt-4">
                 <Button size="lg" asChild className="text-base">
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Start Free Trial
                     <ArrowRight className="ml-2 size-5" />
                   </Link>

@@ -2,19 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth/next'
 import NextAuth from 'next-auth'
 import GoogleProvider from 'next-auth/providers/google'
-import { createClient } from '@supabase/supabase-js'
-
-// Create admin client that bypasses RLS
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_JWT_SECRET! || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false
-    }
-  }
-)
+import { supabaseAdmin } from '@/lib/supabase'
 
 // NextAuth configuration for server-side session
 const authOptions = {

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type FamilyMember = Database['public']['Tables']['family_members']['Row']

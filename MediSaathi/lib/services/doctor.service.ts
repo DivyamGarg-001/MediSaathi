@@ -1,4 +1,4 @@
-import { supabase } from '@/lib/supabase'
+import { supabaseAdmin as supabase } from '@/lib/supabase'
 import type { Database } from '@/lib/supabase'
 
 type Doctor = Database['public']['Tables']['doctors']['Row']
@@ -13,7 +13,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users!doctors_user_id_fkey(full_name, email, phone, avatar_url),
+          users:user_id(full_name, email, phone, avatar_url),
           hospitals:hospital_id(name, address)
         `)
         .eq('user_id', userId)
@@ -33,7 +33,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users!doctors_user_id_fkey(full_name, email, phone, avatar_url),
+          users:user_id(full_name, email, phone, avatar_url),
           hospitals:hospital_id(name, address, phone)
         `)
         .eq('id', doctorId)
@@ -86,7 +86,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users!doctors_user_id_fkey(full_name, avatar_url),
+          users:user_id(full_name, avatar_url),
           hospitals:hospital_id(name, address)
         `)
 
@@ -124,7 +124,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users!doctors_user_id_fkey(full_name, avatar_url, phone)
+          users:user_id(full_name, avatar_url, phone)
         `)
         .eq('hospital_id', hospitalId)
         .order('specialty')
@@ -143,7 +143,7 @@ export class DoctorService {
         .from('appointments')
         .select(`
           patient_id,
-          patients:patient_id(full_name, avatar_url, phone, date_of_birth),
+          users:patient_id(full_name, avatar_url, phone, date_of_birth),
           appointment_date,
           status
         `)
@@ -269,7 +269,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users!doctors_user_id_fkey(full_name, avatar_url),
+          users:user_id(full_name, avatar_url),
           hospitals:hospital_id(name)
         `)
         .order('rating', { ascending: false })
@@ -295,7 +295,7 @@ export class DoctorService {
 
       if (!doctor) return { available: false, error: 'Doctor not found' }
 
-      const dayOfWeek = new Date(date).toLocaleDateString('en-US', { weekday: 'lowercase' })
+      const dayOfWeek = new Date(date).toLocaleDateString('en-US', { weekday: 'long' }).toLowerCase()
       if (!doctor.available_days.includes(dayOfWeek)) {
         return { available: false, error: 'Doctor not available on this day' }
       }

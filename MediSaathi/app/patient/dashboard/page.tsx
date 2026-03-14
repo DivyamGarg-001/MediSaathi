@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -159,44 +160,37 @@ const dummyData = {
     {
       id: 'dummy-family-1',
       relationship: 'spouse',
-      member: {
-        full_name: 'Alex Smith',
-        date_of_birth: '1985-03-15',
-        avatar_url: null
-      }
+      full_name: 'Alex Smith',
+      date_of_birth: '1985-03-15',
+      avatar_url: null
     },
     {
       id: 'dummy-family-2',
       relationship: 'child',
-      member: {
-        full_name: 'Emma Smith',
-        date_of_birth: '2015-07-22',
-        avatar_url: null
-      }
+      full_name: 'Emma Smith',
+      date_of_birth: '2015-07-22',
+      avatar_url: null
     },
     {
       id: 'dummy-family-3',
       relationship: 'child',
-      member: {
-        full_name: 'Liam Smith',
-        date_of_birth: '2018-11-08',
-        avatar_url: null
-      }
+      full_name: 'Liam Smith',
+      date_of_birth: '2018-11-08',
+      avatar_url: null
     },
     {
       id: 'dummy-family-4',
       relationship: 'parent',
-      member: {
-        full_name: 'Margaret Johnson',
-        date_of_birth: '1960-12-03',
-        avatar_url: null
-      }
+      full_name: 'Margaret Johnson',
+      date_of_birth: '1960-12-03',
+      avatar_url: null
     }
   ]
 }
 
 export default function PatientDashboard() {
-  const { user, logout } = useAuth()
+  const { user, loading: authLoading, logout } = useAuth()
+  const router = useRouter()
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     healthRecords: [],
     upcomingAppointments: [],
@@ -207,7 +201,7 @@ export default function PatientDashboard() {
   const [selectedVital, setSelectedVital] = useState('blood_pressure')
   const [vitalValue, setVitalValue] = useState('')
   const [isAddingVital, setIsAddingVital] = useState(false)
-  
+
   // Add Family Member state
   const [isAddFamilyModalOpen, setIsAddFamilyModalOpen] = useState(false)
   const [isAddingFamily, setIsAddingFamily] = useState(false)
@@ -219,6 +213,13 @@ export default function PatientDashboard() {
     phone: '',
     emergency_contact: false
   })
+
+  // Redirect unauthenticated users after auth finishes loading
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/auth/signin')
+    }
+  }, [authLoading, user, router])
 
   useEffect(() => {
     if (user) {
@@ -238,15 +239,15 @@ export default function PatientDashboard() {
       ] = await Promise.all([
         fetch(`/api/health-records?action=get-records&userId=${user.id}`).then(res => res.json()),
         fetch(`/api/appointments?action=upcoming&userId=${user.id}&userType=patient`).then(res => res.json()),
-        fetch(`/api/vitals?action=latest&userId=${user.id}`).then(res => res.json()),
-        fetch(`/api/family?userId=${user.id}`).then(res => res.json())
+        fetch(`/api/vital-signs?action=latest-readings&userId=${user.id}`).then(res => res.json()),
+        fetch(`/api/family-members?userId=${user.id}`).then(res => res.json())
       ])
 
       // Use dummy data if database returns empty or error, otherwise use database data
       setDashboardData({
         healthRecords: (recordsResult.data && recordsResult.data.length > 0) ? recordsResult.data : dummyData.healthRecords,
         upcomingAppointments: (appointmentsResult.data && appointmentsResult.data.length > 0) ? appointmentsResult.data : dummyData.upcomingAppointments,
-        latestVitals: (vitalsResult.data && vitalsResult.data.length > 0) ? vitalsResult.data : dummyData.latestVitals,
+        latestVitals: (vitalsResult.data && vitalsResult.data.some((v: any) => v.data)) ? vitalsResult.data : dummyData.latestVitals,
         familyMembers: (familyResult.data && familyResult.data.length > 0) ? familyResult.data : dummyData.familyMembers,
         loading: false
       })
@@ -268,14 +269,16 @@ export default function PatientDashboard() {
 
     setIsAddingVital(true)
     try {
-      const response = await fetch('/api/vitals', {
+      const response = await fetch('/api/vital-signs', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.id,
-          type: selectedVital,
-          value: vitalValue.trim(),
-          unit: getVitalUnit(selectedVital)
+          vitalData: {
+            user_id: user.id,
+            type: selectedVital,
+            value: vitalValue.trim(),
+            unit: getVitalUnit(selectedVital)
+          }
         })
       })
       
@@ -286,7 +289,8 @@ export default function PatientDashboard() {
         await loadDashboardData() // Refresh data
         
         if (result.abnormal?.isAbnormal) {
-          alert(`⚠️ ${result.abnormal.message}`)
+          const severityLabel = result.abnormal.severity === 'high' ? '🔴 URGENT' : result.abnormal.severity === 'medium' ? '🟡 Warning' : '🟢 Notice'
+          alert(`${severityLabel}: ${result.abnormal.message}`)
         }
       }
     } catch (error) {
@@ -301,17 +305,19 @@ export default function PatientDashboard() {
 
     setIsAddingFamily(true)
     try {
-      const response = await fetch('/api/family', {
+      const response = await fetch('/api/family-members', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          user_id: user.id,
-          member_name: familyMemberForm.name.trim(),
-          relationship: familyMemberForm.relationship,
-          date_of_birth: familyMemberForm.date_of_birth,
-          gender: familyMemberForm.gender,
-          phone: familyMemberForm.phone.trim() || null,
-          emergency_contact: familyMemberForm.emergency_contact
+          memberData: {
+            user_id: user.id,
+            full_name: familyMemberForm.name.trim(),
+            relationship: familyMemberForm.relationship,
+            date_of_birth: familyMemberForm.date_of_birth,
+            gender: familyMemberForm.gender,
+            phone: familyMemberForm.phone.trim() || null,
+            emergency_contact: familyMemberForm.emergency_contact
+          }
         })
       })
       
@@ -363,12 +369,12 @@ export default function PatientDashboard() {
 
   const getLatestVitalValue = (type: string) => {
     const vital = dashboardData.latestVitals.find(v => v.type === type)
-    return vital ? `${vital.data.value} ${vital.data.unit}` : 'No data'
+    return vital?.data ? `${vital.data.value} ${vital.data.unit}` : 'No data'
   }
 
   const getLatestVitalDate = (type: string) => {
     const vital = dashboardData.latestVitals.find(v => v.type === type)
-    return vital ? new Date(vital.data.recorded_at).toLocaleDateString() : ''
+    return vital?.data ? new Date(vital.data.recorded_at).toLocaleDateString() : ''
   }
 
   const getUserInitials = () => {
@@ -394,12 +400,16 @@ export default function PatientDashboard() {
     return Math.min(score, 100)
   }
 
-  if (dashboardData.loading) {
+  if (authLoading || dashboardData.loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
       </div>
     )
+  }
+
+  if (!user) {
+    return null
   }
 
   return (
@@ -613,15 +623,15 @@ export default function PatientDashboard() {
                       {dashboardData.familyMembers.map((member: any) => (
                         <div key={member.id} className="text-center p-4 border rounded-lg card-hover cursor-pointer">
                           <Avatar className="h-12 w-12 mx-auto mb-2">
-                            <AvatarImage src={member.member?.avatar_url} />
+                            <AvatarImage src={member.avatar_url} />
                             <AvatarFallback>
-                              {member.member?.full_name?.charAt(0)?.toUpperCase() || 'F'}
+                              {member.full_name?.charAt(0)?.toUpperCase() || 'F'}
                             </AvatarFallback>
                           </Avatar>
-                          <p className="font-medium text-sm">{member.member?.full_name || 'Family Member'}</p>
+                          <p className="font-medium text-sm">{member.full_name || 'Family Member'}</p>
                           <p className="text-xs text-muted-foreground">
-                            {member.member?.date_of_birth ? 
-                              `${new Date().getFullYear() - new Date(member.member.date_of_birth).getFullYear()} years` : 
+                            {member.date_of_birth ?
+                              `${new Date().getFullYear() - new Date(member.date_of_birth).getFullYear()} years` :
                               'Age not set'}
                           </p>
                           <Badge variant="outline" className="mt-1 text-xs">

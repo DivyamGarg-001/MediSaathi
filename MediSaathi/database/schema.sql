@@ -115,6 +115,7 @@ CREATE TABLE public.appointments (
   appointment_time TIME NOT NULL,
   duration INTEGER DEFAULT 30,
   type TEXT CHECK (type IN ('consultation', 'follow_up', 'emergency', 'telemedicine')) NOT NULL,
+  is_urgent BOOLEAN DEFAULT FALSE,
   status TEXT CHECK (status IN ('scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show')) DEFAULT 'scheduled',
   reason TEXT NOT NULL,
   notes TEXT,
@@ -211,6 +212,9 @@ ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
 -- Users can only access their own data
 CREATE POLICY "Users can view own profile" ON public.users
   FOR SELECT USING (auth.uid() = id);
+
+CREATE POLICY "Users can insert own profile" ON public.users
+  FOR INSERT WITH CHECK (auth.uid() = id);
 
 CREATE POLICY "Users can update own profile" ON public.users
   FOR UPDATE USING (auth.uid() = id);

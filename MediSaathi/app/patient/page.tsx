@@ -44,7 +44,7 @@ export default function PatientPage() {
 
               <div className="flex flex-col sm:flex-row gap-4 pt-4">
                 <Button size="lg" asChild>
-                  <Link href="/signup">
+                  <Link href="/auth/signup">
                     Start Free Trial
                     <ArrowRight className="ml-2 size-5" />
                   </Link>
@@ -220,7 +220,7 @@ export default function PatientPage() {
                     </li>
                   </ul>
                   <Button variant="outline" className="w-full bg-transparent" asChild>
-                    <Link href="/signup">Get Started Free</Link>
+                    <Link href="/auth/signup">Get Started Free</Link>
                   </Button>
                 </CardContent>
               </Card>
@@ -275,7 +275,7 @@ export default function PatientPage() {
                     </li>
                   </ul>
                   <Button className="w-full" asChild>
-                    <Link href="/signup">Start Premium Trial</Link>
+                    <Link href="/auth/signup">Start Premium Trial</Link>
                   </Button>
                 </CardContent>
               </Card>

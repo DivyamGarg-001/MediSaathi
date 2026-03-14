@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from 'react'
 import { useAuth } from '@/contexts/auth-context'
-import { apiClient } from '@/lib/api-client'
 import ProtectedRoute from '@/components/protected-route'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -37,8 +36,8 @@ export default function PatientDashboard() {
       ] = await Promise.all([
         fetch(`/api/health-records?action=get-records&userId=${user!.id}`).then(res => res.json()),
         fetch(`/api/appointments?action=upcoming&userId=${user!.id}&userType=patient`).then(res => res.json()),
-        fetch(`/api/vitals?action=latest&userId=${user!.id}`).then(res => res.json()),
-        fetch(`/api/family?userId=${user!.id}`).then(res => res.json())
+        fetch(`/api/vital-signs?action=latest-readings&userId=${user!.id}`).then(res => res.json()),
+        fetch(`/api/family-members?userId=${user!.id}`).then(res => res.json())
       ])
 
       setDashboardData({
@@ -56,15 +55,17 @@ export default function PatientDashboard() {
 
   const addVitalSign = async (vitalData: any) => {
     try {
-      const response = await fetch('/api/vitals', {
+      const response = await fetch('/api/vital-signs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          ...vitalData,
-          user_id: user!.id,
-          recorded_at: new Date().toISOString()
+          vitalData: {
+            ...vitalData,
+            user_id: user!.id,
+            recorded_at: new Date().toISOString()
+          }
         })
       })
       
@@ -72,7 +73,7 @@ export default function PatientDashboard() {
       
       if (result.success) {
         // Refresh vitals data
-        const vitalsResponse = await fetch(`/api/vitals?action=latest&userId=${user!.id}`)
+        const vitalsResponse = await fetch(`/api/vital-signs?action=latest-readings&userId=${user!.id}`)
         const vitalsResult = await vitalsResponse.json()
         
         setDashboardData(prev => ({
@@ -82,7 +83,8 @@ export default function PatientDashboard() {
         
         // Show abnormal reading alert if needed
         if (result.abnormal?.isAbnormal) {
-          alert(`⚠️ ${result.abnormal.message}`)
+          const severityLabel = result.abnormal.severity === 'high' ? '🔴 URGENT' : result.abnormal.severity === 'medium' ? '🟡 Warning' : '🟢 Notice'
+          alert(`${severityLabel}: ${result.abnormal.message}`)
         }
       }
     } catch (error) {

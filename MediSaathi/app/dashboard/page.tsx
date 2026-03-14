@@ -17,7 +17,7 @@ export default function DashboardPage() {
     if (loading) return
 
     if (!user) {
-      router.push('/login')
+      router.push('/auth/signin')
       return
     }
 
@@ -25,13 +25,13 @@ export default function DashboardPage() {
     const handleUserTypeUpdate = async () => {
       const pendingUserType = localStorage.getItem('pendingUserType')
       
-      if (pendingUserType && pendingUserType !== user.user_type && (pendingUserType === 'patient' || pendingUserType === 'doctor')) {
+      if (pendingUserType && pendingUserType !== user.user_type && (pendingUserType === 'patient' || pendingUserType === 'doctor' || pendingUserType === 'hospital')) {
         setIsUpdating(true)
         setError(null)
-        
+
         try {
           // Use the auth context's updateUserType method
-          await updateUserType(pendingUserType as 'patient' | 'doctor')
+          await updateUserType(pendingUserType as 'patient' | 'doctor' | 'hospital')
           
           // Clear the pending user type
           localStorage.removeItem('pendingUserType')

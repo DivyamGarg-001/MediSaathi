@@ -5,7 +5,7 @@ import { createClient } from '@supabase/supabase-js'
 // Create a service role client that bypasses RLS
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY! || process.env.SUPABASE_JWT_SECRET!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
   {
     auth: {
       autoRefreshToken: false,
@@ -32,27 +32,67 @@ export default NextAuth({
             .eq('email', user.email)
             .single()
 
-          // If user doesn't exist, create a profile
-          if (!existingUser) {
-            // Default to patient, this will be updated by the client-side logic
-            const { error } = await supabaseAdmin
-              .from('users')
-              .insert({
-                email: user.email!,
-                full_name: user.name || '',
-                avatar_url: user.image || '',
-                user_type: 'patient', // Default, will be updated
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
+          if (existingUser) {
+            // User already exists (e.g. signed up via email/password) — update Google profile info
+            if (!existingUser.avatar_url && user.image) {
+              await supabaseAdmin
+                .from('users')
+                .update({ avatar_url: user.image, updated_at: new Date().toISOString() })
+                .eq('id', existingUser.id)
+            }
+            return true
+          }
 
-            if (error) {
-              console.log("------------------");
-              console.log("Error because of not able to create a user in table");
-              console.error('Error creating user profile:', error)
+          // User doesn't exist in public.users — create profile
+          let authUserId: string
+
+          // Try to create a Supabase Auth user
+          const { data: authUser, error: authError } = await supabaseAdmin.auth.admin.createUser({
+            email: user.email!,
+            email_confirm: true,
+            user_metadata: {
+              full_name: user.name || '',
+              avatar_url: user.image || '',
+              provider: 'google',
+            }
+          })
+
+          if (authError) {
+            // If user already exists in auth.users (e.g. from email signup), find their ID
+            if (authError.message?.includes('already been registered')) {
+              const { data: { users: existingAuthUsers } } = await supabaseAdmin.auth.admin.listUsers()
+              const found = existingAuthUsers?.find(u => u.email === user.email)
+              if (!found) {
+                console.error('Could not find existing auth user')
+                return false
+              }
+              authUserId = found.id
+            } else {
+              console.error('Error creating auth user:', authError)
               return false
             }
+          } else {
+            authUserId = authUser.user.id
           }
+
+          // Insert into the public users table
+          const { error } = await supabaseAdmin
+            .from('users')
+            .insert({
+              id: authUserId,
+              email: user.email!,
+              full_name: user.name || '',
+              avatar_url: user.image || '',
+              user_type: 'patient', // Default, will be updated
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            })
+
+          if (error) {
+            console.error('Error creating user profile:', error)
+            return false
+          }
+
           return true
         } catch (error) {
           console.error('Sign-in error:', error)
@@ -105,7 +145,7 @@ export default NextAuth({
     }
   },
   pages: {
-    signIn: '/login',
+    signIn: '/auth/signin',
     error: '/auth/error',
   },
   session: {
