@@ -189,7 +189,7 @@ All tables use Row Level Security (RLS) for multi-tenant data isolation.
 
 ## Authentication
 
-MediSaathi uses a dual authentication system:
+MediSaathi uses a dual authentication-system:
 
 - **Google OAuth** via NextAuth.js - for social sign-in
 - **Email/Password** via Supabase Auth - for direct registration
