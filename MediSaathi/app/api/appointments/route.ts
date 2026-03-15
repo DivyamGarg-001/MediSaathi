@@ -11,6 +11,13 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get('action')
     const date = searchParams.get('date')
 
+    // Time tracking analytics
+    if (action === 'time-tracking' && doctorId) {
+      const result = await AppointmentService.getTimeTrackingAnalytics(doctorId)
+      if (result.error) throw result.error
+      return NextResponse.json({ success: true, data: result.data })
+    }
+
     // Handle doctor-specific queries
     if (doctorId && date) {
       // Get appointments for a specific doctor on a specific date
@@ -171,12 +178,22 @@ export async function PUT(request: NextRequest) {
       case 'cancel':
         const cancelResult = await AppointmentService.cancelAppointment(appointmentId, reason)
         if (cancelResult.error) throw cancelResult.error
-        
-        return NextResponse.json({ 
-          success: true, 
+
+        return NextResponse.json({
+          success: true,
           data: cancelResult.data,
-          message: 'Appointment cancelled successfully' 
+          message: 'Appointment cancelled successfully'
         })
+
+      case 'start-consultation':
+        const startResult = await AppointmentService.startConsultation(appointmentId)
+        if (startResult.error) throw startResult.error
+        return NextResponse.json({ success: true, data: startResult.data, message: 'Consultation started' })
+
+      case 'end-consultation':
+        const endResult = await AppointmentService.endConsultation(appointmentId)
+        if (endResult.error) throw endResult.error
+        return NextResponse.json({ success: true, data: endResult.data, message: 'Consultation ended' })
 
       default:
         return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })

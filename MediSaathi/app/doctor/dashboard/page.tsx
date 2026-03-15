@@ -19,26 +19,23 @@ import {
   Plus,
   Bell,
   Settings,
-  Stethoscope,
   Activity,
   TrendingUp,
   AlertTriangle,
-  CheckCircle2,
   Eye,
-  Edit,
   Send,
   Phone,
   Video,
   MessageSquare,
-  Download,
   Upload,
   BarChart3,
   Heart,
-  Thermometer,
-  Clipboard,
   Star,
   Filter,
+  Timer,
+  Lightbulb,
 } from "lucide-react"
+import Link from "next/link"
 
 interface DashboardData {
   todayAppointments: any[]
@@ -225,6 +222,13 @@ export default function DoctorDashboard() {
     loading: true
   })
   const [searchQuery, setSearchQuery] = useState('')
+  const [monthStats, setMonthStats] = useState({
+    patientsTreated: 0,
+    successRate: 0,
+    avgRating: 0,
+    avgDuration: 0,
+    loaded: false,
+  })
   const [prescriptionData, setPrescriptionData] = useState({
     patient: 'Sarah Johnson',
     date: '2024-11-23',
@@ -295,12 +299,34 @@ export default function DoctorDashboard() {
         loading: false
       })
     }
-  }
 
-  const calculateSuccessRate = () => {
-    const completedAppointments = dashboardData.todayAppointments.filter(a => a.status === 'completed').length
-    const totalAppointments = dashboardData.todayAppointments.length
-    return totalAppointments > 0 ? Math.round((completedAppointments / totalAppointments) * 100) : 94
+    // Fetch real performance stats (separate try-catch so main dashboard still loads)
+    try {
+      const doctorRes = await fetch(`/api/doctors?action=get-by-user&userId=${user.id}`).then(r => r.json())
+      if (doctorRes.success && doctorRes.data) {
+        const docId = doctorRes.data.id
+        const rating = doctorRes.data.rating || 0
+        const [analyticsRes, timeRes] = await Promise.all([
+          fetch(`/api/doctors?action=analytics&doctorId=${docId}`).then(r => r.json()),
+          fetch(`/api/appointments?action=time-tracking&doctorId=${docId}`).then(r => r.json()),
+        ])
+        const thisMonth = new Date().toISOString().substring(0, 7)
+        const a = analyticsRes.success ? analyticsRes.data : null
+        const t = timeRes.success ? timeRes.data : null
+        if (a) {
+          const totalWithOutcome = a.completedCount + a.cancelledCount + a.noShowCount
+          setMonthStats({
+            patientsTreated: a.monthlyAppointments?.[thisMonth] || 0,
+            successRate: totalWithOutcome > 0 ? Math.round((a.completedCount / totalWithOutcome) * 100) : 0,
+            avgRating: rating,
+            avgDuration: t?.avgDuration || 0,
+            loaded: true,
+          })
+        }
+      }
+    } catch {
+      // Stats will remain at defaults
+    }
   }
 
   const getStatusVariant = (status: string) => {
@@ -798,10 +824,12 @@ export default function DoctorDashboard() {
                     </div>
                     
                     <div className="flex gap-2">
-                      <Button variant="outline" size="sm" className="flex-1">
-                        <FileText className="h-4 w-4 mr-1" />
-                        Patient History
-                      </Button>
+                      <Link href={`/doctor/patients/${dashboardData.todayAppointments[0]?.patients?.id || dashboardData.todayAppointments[0]?.patient_id || ''}`} className="flex-1">
+                        <Button variant="outline" size="sm" className="w-full">
+                          <FileText className="h-4 w-4 mr-1" />
+                          Patient History
+                        </Button>
+                      </Link>
                       <Button variant="outline" size="sm" className="flex-1">
                         <Upload className="h-4 w-4 mr-1" />
                         Add Note
@@ -818,21 +846,27 @@ export default function DoctorDashboard() {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-2">
+                <Link href="/doctor/analytics">
+                  <Button variant="outline" size="sm" className="w-full justify-start">
+                    <BarChart3 className="h-4 w-4 mr-2" />
+                    Practice Analytics
+                  </Button>
+                </Link>
+                <Link href="/doctor/insights">
+                  <Button variant="outline" size="sm" className="w-full justify-start">
+                    <Lightbulb className="h-4 w-4 mr-2" />
+                    Practice Insights
+                  </Button>
+                </Link>
+                <Link href="/doctor/time-tracking">
+                  <Button variant="outline" size="sm" className="w-full justify-start">
+                    <Timer className="h-4 w-4 mr-2" />
+                    Time Tracking
+                  </Button>
+                </Link>
                 <Button variant="outline" size="sm" className="w-full justify-start">
                   <Video className="h-4 w-4 mr-2" />
                   Start Video Call
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <FileText className="h-4 w-4 mr-2" />
-                  Write Prescription
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Schedule Follow-up
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <Upload className="h-4 w-4 mr-2" />
-                  Request Lab Tests
                 </Button>
               </CardContent>
             </Card>
@@ -840,27 +874,27 @@ export default function DoctorDashboard() {
             {/* Performance Stats */}
             <Card>
               <CardHeader>
-                <CardTitle>This Month's Performance</CardTitle>
+                <CardTitle>This Month&apos;s Performance</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Patients Treated</span>
-                  <span className="font-bold">89</span>
+                  <span className="font-bold">{monthStats.loaded ? monthStats.patientsTreated : '—'}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Success Rate</span>
-                  <span className="font-bold text-green-600">94%</span>
+                  <span className="font-bold text-green-600">{monthStats.loaded ? `${monthStats.successRate}%` : '—'}</span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="text-sm">Avg. Rating</span>
                   <div className="flex items-center gap-1">
                     <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                    <span className="font-bold">4.8</span>
+                    <span className="font-bold">{monthStats.loaded ? monthStats.avgRating.toFixed(1) : '—'}</span>
                   </div>
                 </div>
                 <div className="flex justify-between items-center">
-                  <span className="text-sm">Response Time</span>
-                  <span className="font-bold">12 min</span>
+                  <span className="text-sm">Avg. Consultation</span>
+                  <span className="font-bold">{monthStats.loaded ? `${monthStats.avgDuration} min` : '—'}</span>
                 </div>
               </CardContent>
             </Card>

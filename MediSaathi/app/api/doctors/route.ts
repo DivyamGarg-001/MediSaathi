@@ -72,6 +72,22 @@ export async function GET(request: NextRequest) {
         if (topResult.error) throw topResult.error
         return NextResponse.json({ success: true, data: topResult.data })
 
+      case 'patient-timeline':
+        if (!doctorId || !searchParams.get('patientId')) {
+          return NextResponse.json({ success: false, error: 'Doctor ID and Patient ID required' }, { status: 400 })
+        }
+        const timelineResult = await DoctorService.getPatientTimeline(searchParams.get('patientId')!, doctorId)
+        if (timelineResult.error) throw timelineResult.error
+        return NextResponse.json({ success: true, data: timelineResult.data })
+
+      case 'analytics':
+        if (!doctorId) {
+          return NextResponse.json({ success: false, error: 'Doctor ID required' }, { status: 400 })
+        }
+        const analyticsResult = await DoctorService.getDoctorAnalytics(doctorId)
+        if (analyticsResult.error) throw analyticsResult.error
+        return NextResponse.json({ success: true, data: analyticsResult.data })
+
       case 'check-availability':
         const date = searchParams.get('date')
         const time = searchParams.get('time')

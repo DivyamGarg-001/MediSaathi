@@ -122,6 +122,8 @@ CREATE TABLE public.appointments (
   prescription_id UUID,
   fee DECIMAL(10,2),
   payment_status TEXT CHECK (payment_status IN ('pending', 'paid', 'refunded')) DEFAULT 'pending',
+  actual_start_time TIMESTAMP WITH TIME ZONE,
+  actual_end_time TIMESTAMP WITH TIME ZONE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );

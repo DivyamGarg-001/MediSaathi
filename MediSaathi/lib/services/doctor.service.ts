@@ -283,6 +283,127 @@ export class DoctorService {
     }
   }
 
+  // Get patient timeline (all data for a specific patient visible to this doctor)
+  static async getPatientTimeline(patientId: string, doctorId: string) {
+    try {
+      const [profileResult, appointmentsResult, prescriptionsResult, recordsResult, vitalsResult] = await Promise.all([
+        supabase.from('users').select('id, full_name, email, phone, date_of_birth, gender, avatar_url, address').eq('id', patientId).single(),
+        supabase.from('appointments').select('id, appointment_date, appointment_time, status, type, reason, notes, is_urgent, fee, created_at').eq('patient_id', patientId).eq('doctor_id', doctorId).order('appointment_date', { ascending: false }),
+        supabase.from('prescriptions').select('id, medications, instructions, valid_until, status, created_at').eq('patient_id', patientId).eq('doctor_id', doctorId).order('created_at', { ascending: false }),
+        supabase.from('health_records').select('id, title, type, file_url, date_recorded, ai_summary, is_critical, created_at').eq('user_id', patientId).order('date_recorded', { ascending: false }),
+        supabase.from('vital_signs').select('id, type, value, unit, notes, recorded_at').eq('user_id', patientId).order('recorded_at', { ascending: false }).limit(50),
+      ])
+
+      if (profileResult.error) throw profileResult.error
+
+      return {
+        data: {
+          profile: profileResult.data,
+          appointments: appointmentsResult.data || [],
+          prescriptions: prescriptionsResult.data || [],
+          healthRecords: recordsResult.data || [],
+          vitalSigns: vitalsResult.data || [],
+        },
+        error: null,
+      }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
+  // Get comprehensive analytics for a doctor
+  static async getDoctorAnalytics(doctorId: string) {
+    try {
+      const [appointmentsResult, prescriptionsResult, doctorResult] = await Promise.all([
+        supabase.from('appointments').select('id, patient_id, status, type, fee, appointment_date, appointment_time, reason, created_at').eq('doctor_id', doctorId),
+        supabase.from('prescriptions').select('id, patient_id, created_at').eq('doctor_id', doctorId),
+        supabase.from('doctors').select('rating, total_patients, consultation_fee').eq('id', doctorId).single(),
+      ])
+
+      const appointments = appointmentsResult.data || []
+      const completed = appointments.filter(a => a.status === 'completed')
+      const cancelled = appointments.filter(a => a.status === 'cancelled')
+      const noShow = appointments.filter(a => a.status === 'no_show')
+
+      // Revenue by month
+      const revenueByMonth: Record<string, number> = {}
+      completed.forEach(a => {
+        const month = a.appointment_date?.substring(0, 7)
+        if (month) revenueByMonth[month] = (revenueByMonth[month] || 0) + Number(a.fee || 0)
+      })
+
+      // Monthly appointment counts
+      const monthlyAppointments: Record<string, number> = {}
+      appointments.forEach(a => {
+        const month = a.appointment_date?.substring(0, 7)
+        if (month) monthlyAppointments[month] = (monthlyAppointments[month] || 0) + 1
+      })
+
+      // By type
+      const byType: Record<string, number> = {}
+      appointments.forEach(a => { byType[a.type] = (byType[a.type] || 0) + 1 })
+
+      // Top reasons
+      const reasonCounts: Record<string, number> = {}
+      appointments.forEach(a => {
+        if (a.reason) reasonCounts[a.reason] = (reasonCounts[a.reason] || 0) + 1
+      })
+      const topReasons = Object.entries(reasonCounts)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 10)
+        .map(([reason, count]) => ({ reason, count }))
+
+      // Unique patients
+      const uniquePatientIds = [...new Set(appointments.map(a => a.patient_id))]
+
+      // Patient demographics
+      let genderDistribution: Record<string, number> = {}
+      let ageBrackets: Record<string, number> = { '0-18': 0, '19-30': 0, '31-50': 0, '51-70': 0, '71+': 0 }
+      if (uniquePatientIds.length > 0) {
+        const { data: patients } = await supabase
+          .from('users')
+          .select('id, date_of_birth, gender')
+          .in('id', uniquePatientIds)
+
+        patients?.forEach(p => {
+          genderDistribution[p.gender || 'unknown'] = (genderDistribution[p.gender || 'unknown'] || 0) + 1
+          if (p.date_of_birth) {
+            const age = Math.floor((Date.now() - new Date(p.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
+            if (age <= 18) ageBrackets['0-18']++
+            else if (age <= 30) ageBrackets['19-30']++
+            else if (age <= 50) ageBrackets['31-50']++
+            else if (age <= 70) ageBrackets['51-70']++
+            else ageBrackets['71+']++
+          }
+        })
+      }
+
+      const totalRevenue = completed.reduce((sum, a) => sum + Number(a.fee || 0), 0)
+
+      return {
+        data: {
+          totalAppointments: appointments.length,
+          completedCount: completed.length,
+          cancelledCount: cancelled.length,
+          noShowCount: noShow.length,
+          totalRevenue,
+          totalPrescriptions: prescriptionsResult.data?.length || 0,
+          uniquePatients: uniquePatientIds.length,
+          rating: doctorResult.data?.rating || 0,
+          byType,
+          monthlyAppointments,
+          revenueByMonth,
+          topReasons,
+          genderDistribution,
+          ageBrackets,
+        },
+        error: null,
+      }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
   // Check doctor availability
   static async isDoctorAvailable(doctorId: string, date: string, time: string) {
     try {

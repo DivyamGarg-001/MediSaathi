@@ -37,6 +37,7 @@ import {
   Settings,
   Download,
   X,
+  Pill,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -1174,9 +1175,11 @@ export default function PatientDashboard() {
                       <span>${(dashboardData.healthRecords.length * 25).toFixed(0)}</span>
                     </div>
                   </div>
-                  <Button variant="outline" size="sm" className="w-full">
-                    View Details
-                  </Button>
+                  <Link href="/patient/wallet">
+                    <Button variant="outline" size="sm" className="w-full">
+                      View Details
+                    </Button>
+                  </Link>
                 </CardContent>
               </Card>
 
@@ -1186,14 +1189,24 @@ export default function PatientDashboard() {
                   <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-2">
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <Upload className="h-4 w-4 mr-2" />
-                    Upload Report
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <CalendarIcon className="h-4 w-4 mr-2" />
-                    Book Appointment
-                  </Button>
+                  <Link href="/patient/prescriptions">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      <Pill className="h-4 w-4 mr-2" />
+                      View Prescriptions
+                    </Button>
+                  </Link>
+                  <Link href="/patient/reminders">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      <Bell className="h-4 w-4 mr-2" />
+                      Smart Reminders
+                    </Button>
+                  </Link>
+                  <Link href="/patient/wallet">
+                    <Button variant="outline" size="sm" className="w-full justify-start">
+                      <Wallet className="h-4 w-4 mr-2" />
+                      Health Wallet
+                    </Button>
+                  </Link>
                   <Button
                     variant="outline"
                     size="sm"
@@ -1202,10 +1215,6 @@ export default function PatientDashboard() {
                   >
                     <Phone className="h-4 w-4 mr-2" />
                     Call Emergency
-                  </Button>
-                  <Button variant="outline" size="sm" className="w-full justify-start">
-                    <FileText className="h-4 w-4 mr-2" />
-                    View All Records
                   </Button>
                 </CardContent>
               </Card>

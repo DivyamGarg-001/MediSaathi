@@ -308,6 +308,8 @@ export type Database = {
           prescription_id: string | null
           fee: number | null
           payment_status: 'pending' | 'paid' | 'refunded'
+          actual_start_time: string | null
+          actual_end_time: string | null
           created_at: string
           updated_at: string
         }
@@ -327,6 +329,8 @@ export type Database = {
           prescription_id?: string | null
           fee?: number | null
           payment_status?: 'pending' | 'paid' | 'refunded'
+          actual_start_time?: string | null
+          actual_end_time?: string | null
           created_at?: string
           updated_at?: string
         }
@@ -346,6 +350,8 @@ export type Database = {
           prescription_id?: string | null
           fee?: number | null
           payment_status?: 'pending' | 'paid' | 'refunded'
+          actual_start_time?: string | null
+          actual_end_time?: string | null
           updated_at?: string
         }
       }
@@ -384,6 +390,81 @@ export type Database = {
           valid_until?: string
           status?: 'active' | 'expired' | 'cancelled'
           updated_at?: string
+        }
+      }
+      health_wallet: {
+        Row: {
+          id: string
+          user_id: string
+          transaction_type: 'expense' | 'income' | 'insurance_claim'
+          category: string
+          amount: number
+          description: string | null
+          date_occurred: string
+          doctor_id: string | null
+          hospital_id: string | null
+          appointment_id: string | null
+          receipt_url: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          transaction_type: 'expense' | 'income' | 'insurance_claim'
+          category: string
+          amount: number
+          description?: string | null
+          date_occurred: string
+          doctor_id?: string | null
+          hospital_id?: string | null
+          appointment_id?: string | null
+          receipt_url?: string | null
+          created_at?: string
+        }
+        Update: {
+          transaction_type?: 'expense' | 'income' | 'insurance_claim'
+          category?: string
+          amount?: number
+          description?: string | null
+          date_occurred?: string
+          doctor_id?: string | null
+          hospital_id?: string | null
+          appointment_id?: string | null
+          receipt_url?: string | null
+        }
+      }
+      ai_insights: {
+        Row: {
+          id: string
+          user_id: string
+          family_member_id: string | null
+          insight_type: 'risk_prediction' | 'health_trend' | 'medication_reminder' | 'checkup_due'
+          title: string
+          description: string
+          severity: 'low' | 'medium' | 'high' | 'critical'
+          action_required: boolean
+          dismissed: boolean
+          created_at: string
+          expires_at: string | null
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          family_member_id?: string | null
+          insight_type: 'risk_prediction' | 'health_trend' | 'medication_reminder' | 'checkup_due'
+          title: string
+          description: string
+          severity?: 'low' | 'medium' | 'high' | 'critical'
+          action_required?: boolean
+          dismissed?: boolean
+          created_at?: string
+          expires_at?: string | null
+        }
+        Update: {
+          dismissed?: boolean
+          severity?: 'low' | 'medium' | 'high' | 'critical'
+          action_required?: boolean
+          expires_at?: string | null
         }
       }
     }

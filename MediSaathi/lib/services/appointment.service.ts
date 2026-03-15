@@ -304,6 +304,122 @@ export class AppointmentService {
     }
   }
 
+  // Start consultation timer
+  static async startConsultation(appointmentId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .update({
+          actual_start_time: new Date().toISOString(),
+          status: 'in_progress',
+        })
+        .eq('id', appointmentId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
+  // End consultation timer
+  static async endConsultation(appointmentId: string) {
+    try {
+      const { data, error } = await supabase
+        .from('appointments')
+        .update({
+          actual_end_time: new Date().toISOString(),
+          status: 'completed',
+        })
+        .eq('id', appointmentId)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { data, error: null }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
+  // Get time tracking analytics for a doctor
+  static async getTimeTrackingAnalytics(doctorId: string) {
+    try {
+      const { data: appointments, error } = await supabase
+        .from('appointments')
+        .select('id, patient_id, type, status, appointment_date, appointment_time, duration, actual_start_time, actual_end_time, fee, patients:patient_id(full_name)')
+        .eq('doctor_id', doctorId)
+        .order('appointment_date', { ascending: false })
+
+      if (error) throw error
+
+      const all = appointments || []
+      const tracked = all.filter(a => a.actual_start_time && a.actual_end_time)
+
+      const durations = tracked.map(a => {
+        const start = new Date(a.actual_start_time!).getTime()
+        const end = new Date(a.actual_end_time!).getTime()
+        return { ...a, actualDuration: Math.round((end - start) / 60000) }
+      })
+
+      const avgDuration = durations.length > 0
+        ? Math.round(durations.reduce((sum, d) => sum + d.actualDuration, 0) / durations.length)
+        : 0
+
+      // Average by type
+      const avgByType: Record<string, number> = {}
+      const typeGroups: Record<string, number[]> = {}
+      durations.forEach(d => {
+        if (!typeGroups[d.type]) typeGroups[d.type] = []
+        typeGroups[d.type].push(d.actualDuration)
+      })
+      Object.entries(typeGroups).forEach(([type, vals]) => {
+        avgByType[type] = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length)
+      })
+
+      // Hours by month
+      const hoursByMonth: Record<string, number> = {}
+      durations.forEach(d => {
+        const month = d.appointment_date?.substring(0, 7)
+        if (month) hoursByMonth[month] = (hoursByMonth[month] || 0) + d.actualDuration / 60
+      })
+
+      // Today's sessions
+      const today = new Date().toISOString().split('T')[0]
+      const todaySessions = durations.filter(d => d.appointment_date === today)
+      const todayTotalMinutes = todaySessions.reduce((sum, d) => sum + d.actualDuration, 0)
+
+      // Active consultation (started but not ended)
+      const activeConsultation = all.find(a => a.actual_start_time && !a.actual_end_time)
+
+      // Today's pending appointments (can be started)
+      const todayPending = all.filter(a =>
+        a.appointment_date === today &&
+        !a.actual_start_time &&
+        ['scheduled', 'confirmed'].includes(a.status)
+      )
+
+      return {
+        data: {
+          totalTrackedSessions: durations.length,
+          avgDuration,
+          avgByType,
+          hoursByMonth,
+          todaySessions,
+          todayTotalMinutes,
+          todayPending,
+          activeConsultation,
+          recentSessions: durations.slice(0, 20),
+        },
+        error: null,
+      }
+    } catch (error) {
+      return { data: null, error }
+    }
+  }
+
   // Send appointment reminders
   static async sendReminders() {
     try {
