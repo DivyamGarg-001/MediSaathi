@@ -38,8 +38,11 @@ export default function SignUpPage() {
       password: formData.get('password') as string,
       full_name: formData.get('name') as string,
       user_type: activeTab as 'patient' | 'doctor' | 'hospital',
+      phone: activeTab === 'hospital' ? formData.get('phone') as string : undefined,
       specialty: activeTab === 'doctor' ? formData.get('specialty') as string : undefined,
       license_number: activeTab !== 'patient' ? formData.get('license') as string : undefined,
+      address: activeTab === 'hospital' ? formData.get('address') as string : undefined,
+      website: activeTab === 'hospital' ? (formData.get('website') as string) || undefined : undefined,
     })
 
     if (!result.success) {
@@ -153,6 +156,18 @@ export default function SignUpPage() {
                     <div className="space-y-2">
                       <Label htmlFor="hosp-email">Admin Email</Label>
                       <Input name="email" id="hosp-email" type="email" placeholder="admin@hospital.com" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="hosp-phone">Phone</Label>
+                      <Input name="phone" id="hosp-phone" placeholder="+91 9876543210" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="hosp-address">Address</Label>
+                      <Input name="address" id="hosp-address" placeholder="123 Main Road, City" required />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="hosp-website">Website (Optional)</Label>
+                      <Input name="website" id="hosp-website" placeholder="https://examplehospital.com" />
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="hosp-license">Hospital License</Label>

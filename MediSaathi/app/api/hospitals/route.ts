@@ -13,6 +13,8 @@ export async function GET(request: NextRequest) {
     const minimumBeds = searchParams.get('minimumBeds')
     const service = searchParams.get('service')
     const limit = searchParams.get('limit')
+    const fromDate = searchParams.get('fromDate')
+    const toDate = searchParams.get('toDate')
 
     switch (action) {
       case 'get-by-user':
@@ -94,6 +96,25 @@ export async function GET(request: NextRequest) {
         if (occupancyResult.error) throw occupancyResult.error
         return NextResponse.json({ success: true, data: occupancyResult.data })
 
+      case 'settings':
+        if (!hospitalId) {
+          return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
+        }
+        const settingsResult = await HospitalService.getHospitalSystemSettings(hospitalId)
+        if (settingsResult.error) throw settingsResult.error
+        return NextResponse.json({ success: true, data: settingsResult.data })
+
+      case 'report':
+        if (!hospitalId) {
+          return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
+        }
+        const reportResult = await HospitalService.generateHospitalReport(hospitalId, {
+          fromDate: fromDate || undefined,
+          toDate: toDate || undefined,
+        })
+        if (reportResult.error) throw reportResult.error
+        return NextResponse.json({ success: true, data: reportResult.data })
+
       default:
         return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
     }
@@ -106,7 +127,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, hospitalData } = body
+    const { action, hospitalData, hospitalId, doctorData } = body
 
     switch (action) {
       case 'create':
@@ -126,6 +147,27 @@ export async function POST(request: NextRequest) {
           message: 'Hospital profile created successfully' 
         })
 
+      case 'add-doctor':
+        if (!hospitalId) {
+          return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
+        }
+
+        if (!doctorData?.email || !doctorData?.password || !doctorData?.fullName || !doctorData?.specialty || !doctorData?.licenseNumber) {
+          return NextResponse.json({
+            success: false,
+            error: 'Required doctor fields missing (email, password, fullName, specialty, licenseNumber)',
+          }, { status: 400 })
+        }
+
+        const addDoctorResult = await HospitalService.addDoctorToHospital(hospitalId, doctorData)
+        if (addDoctorResult.error) throw addDoctorResult.error
+
+        return NextResponse.json({
+          success: true,
+          data: addDoctorResult.data,
+          message: 'Doctor created and assigned successfully',
+        })
+
       default:
         return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
     }
@@ -138,7 +180,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, hospitalId, updates, availableBeds, services } = body
+    const { action, hospitalId, updates, availableBeds, services, doctorId, schedule, settings } = body
 
     if (!hospitalId) {
       return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
@@ -183,11 +225,80 @@ export async function PUT(request: NextRequest) {
           message: 'Hospital services updated successfully' 
         })
 
+      case 'update-doctor-schedule':
+        if (!doctorId || !schedule?.availableDays || !schedule?.availableHours) {
+          return NextResponse.json({
+            success: false,
+            error: 'doctorId and schedule fields (availableDays, availableHours) are required',
+          }, { status: 400 })
+        }
+
+        const scheduleResult = await HospitalService.updateDoctorSchedule(hospitalId, doctorId, {
+          availableDays: schedule.availableDays,
+          availableHours: schedule.availableHours,
+        })
+        if (scheduleResult.error) throw scheduleResult.error
+
+        return NextResponse.json({
+          success: true,
+          data: scheduleResult.data,
+          message: 'Doctor schedule updated successfully',
+        })
+
+      case 'update-settings':
+        if (!settings || typeof settings !== 'object') {
+          return NextResponse.json({ success: false, error: 'settings object required' }, { status: 400 })
+        }
+
+        const settingsResult = await HospitalService.updateHospitalSystemSettings(hospitalId, settings)
+        if (settingsResult.error) throw settingsResult.error
+
+        return NextResponse.json({
+          success: true,
+          data: settingsResult.data,
+          message: 'System settings updated successfully',
+        })
+
       default:
         return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
     }
   } catch (error) {
     console.error('Hospital Update Error:', error)
     return NextResponse.json({ success: false, error: 'Failed to update hospital' }, { status: 500 })
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  try {
+    const { searchParams } = new URL(request.url)
+    const action = searchParams.get('action')
+    const hospitalId = searchParams.get('hospitalId')
+    const doctorId = searchParams.get('doctorId')
+
+    if (!hospitalId) {
+      return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
+    }
+
+    switch (action) {
+      case 'delete-doctor':
+        if (!doctorId) {
+          return NextResponse.json({ success: false, error: 'Doctor ID required' }, { status: 400 })
+        }
+
+        const deleteResult = await HospitalService.deleteDoctorFromHospital(hospitalId, doctorId)
+        if (deleteResult.error) throw deleteResult.error
+
+        return NextResponse.json({
+          success: true,
+          data: deleteResult.data,
+          message: 'Doctor deleted successfully',
+        })
+
+      default:
+        return NextResponse.json({ success: false, error: 'Invalid action' }, { status: 400 })
+    }
+  } catch (error) {
+    console.error('Hospital Delete Error:', error)
+    return NextResponse.json({ success: false, error: 'Failed to process delete request' }, { status: 500 })
   }
 }

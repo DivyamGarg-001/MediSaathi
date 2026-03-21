@@ -1,635 +1,926 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Input } from "@/components/ui/input"
-import { Progress } from "@/components/ui/progress"
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useAuth } from '@/contexts/auth-context'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Badge } from '@/components/ui/badge'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Switch } from '@/components/ui/switch'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   Building2,
-  Users,
   Calendar,
-  TrendingUp,
-  DollarSign,
-  Activity,
-  Clock,
-  Search,
-  Plus,
-  Bell,
-  Settings,
-  UserPlus,
-  Stethoscope,
-  BedSingle,
-  AlertCircle,
-  CheckCircle2,
-  BarChart3,
-  PieChart,
-  ArrowUpRight,
-  ArrowDownRight,
-  Phone,
-  Mail,
-  MapPin,
-  Star,
-  Filter,
   Download,
-  Upload,
-  Eye,
-  Edit,
+  Settings,
+  Stethoscope,
   Trash2,
-  MoreHorizontal,
-} from "lucide-react"
+  UserPlus,
+  FileBarChart,
+} from 'lucide-react'
 
-export default function HospitalDashboard() {
+type HospitalProfile = {
+  id: string
+  name: string
+  address: string
+  phone: string
+  email: string
+  website: string | null
+  total_beds: number
+  available_beds: number
+  departments: string[]
+  services: string[]
+  emergency_services: boolean
+}
+
+type DoctorRecord = {
+  id: string
+  specialty: string
+  license_number: string
+  available_days: string[]
+  available_hours: string
+  experience_years: number
+  consultation_fee: number | null
+  users?: {
+    full_name?: string | null
+    email?: string | null
+    phone?: string | null
+  }
+}
+
+type HospitalReport = {
+  generatedAt: string
+  summary: {
+    totalDoctors: number
+    totalAppointments: number
+    completedAppointments: number
+    cancelledAppointments: number
+    noShowAppointments: number
+    totalRevenue: number
+    averageDoctorRating: number
+  }
+  appointmentsByStatus: Record<string, number>
+  appointmentsByType: Record<string, number>
+  appointmentsBySpecialty: Record<string, number>
+  monthlyAppointments: Record<string, number>
+  revenueByMonth: Record<string, number>
+}
+
+const dayOptions = [
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+]
+
+export default function HospitalDashboardPage() {
+  const router = useRouter()
+  const { user, loading: authLoading } = useAuth()
+
+  const [hospital, setHospital] = useState<HospitalProfile | null>(null)
+  const [doctors, setDoctors] = useState<DoctorRecord[]>([])
+  const [report, setReport] = useState<HospitalReport | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<string>('')
+
+  const [doctorForm, setDoctorForm] = useState({
+    fullName: '',
+    email: '',
+    phone: '',
+    password: '',
+    specialty: '',
+    licenseNumber: '',
+    experienceYears: '0',
+    consultationFee: '',
+    availableHours: '09:00-17:00',
+  })
+
+  const [scheduleForm, setScheduleForm] = useState({
+    doctorId: '',
+    availableDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'] as string[],
+    availableHours: '09:00-17:00',
+  })
+
+  const [reportFilter, setReportFilter] = useState({ fromDate: '', toDate: '' })
+
+  const [settingsForm, setSettingsForm] = useState({
+    name: '',
+    address: '',
+    phone: '',
+    email: '',
+    website: '',
+    totalBeds: 0,
+    availableBeds: 0,
+    departments: '',
+    services: '',
+    emergencyServices: true,
+  })
+
+  const selectedDoctor = useMemo(
+    () => doctors.find((doctor) => doctor.id === scheduleForm.doctorId),
+    [doctors, scheduleForm.doctorId]
+  )
+
+  useEffect(() => {
+    if (!authLoading && !user) {
+      router.push('/auth/signin')
+    }
+  }, [authLoading, user, router])
+
+  useEffect(() => {
+    if (user?.user_type === 'hospital') {
+      void loadHospitalData(user.id)
+    }
+  }, [user])
+
+  const loadHospitalData = async (userId: string) => {
+    setLoading(true)
+    setMessage('')
+    try {
+      const hospitalRes = await fetch(`/api/hospitals?action=get-by-user&userId=${userId}`)
+      const hospitalJson = await hospitalRes.json()
+
+      if (!hospitalRes.ok || !hospitalJson?.data?.id) {
+        throw new Error(hospitalJson?.error || 'Hospital profile not found')
+      }
+
+      const hospitalData: HospitalProfile = hospitalJson.data
+      setHospital(hospitalData)
+      setSettingsForm({
+        name: hospitalData.name,
+        address: hospitalData.address,
+        phone: hospitalData.phone,
+        email: hospitalData.email,
+        website: hospitalData.website || '',
+        totalBeds: hospitalData.total_beds,
+        availableBeds: hospitalData.available_beds,
+        departments: (hospitalData.departments || []).join(', '),
+        services: (hospitalData.services || []).join(', '),
+        emergencyServices: hospitalData.emergency_services,
+      })
+
+      await Promise.all([loadDoctors(hospitalData.id), loadReport(hospitalData.id)])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to load hospital dashboard')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const loadDoctors = async (hospitalId: string) => {
+    const doctorsRes = await fetch(`/api/doctors?action=by-hospital&hospitalId=${hospitalId}`)
+    const doctorsJson = await doctorsRes.json()
+
+    if (!doctorsRes.ok) {
+      throw new Error(doctorsJson?.error || 'Failed to load doctors')
+    }
+
+    const records: DoctorRecord[] = doctorsJson.data || []
+    setDoctors(records)
+
+    if (!scheduleForm.doctorId && records.length > 0) {
+      setScheduleForm({
+        doctorId: records[0].id,
+        availableDays: records[0].available_days || [],
+        availableHours: records[0].available_hours || '09:00-17:00',
+      })
+    }
+  }
+
+  const loadReport = async (hospitalId: string) => {
+    const params = new URLSearchParams({ action: 'report', hospitalId })
+    if (reportFilter.fromDate) params.set('fromDate', reportFilter.fromDate)
+    if (reportFilter.toDate) params.set('toDate', reportFilter.toDate)
+
+    const reportRes = await fetch(`/api/hospitals?${params.toString()}`)
+    const reportJson = await reportRes.json()
+
+    if (!reportRes.ok) {
+      throw new Error(reportJson?.error || 'Failed to generate report')
+    }
+
+    setReport(reportJson.data || null)
+  }
+
+  const handleAddDoctor = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!hospital) return
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/hospitals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'add-doctor',
+          hospitalId: hospital.id,
+          doctorData: {
+            fullName: doctorForm.fullName,
+            email: doctorForm.email,
+            phone: doctorForm.phone || undefined,
+            password: doctorForm.password,
+            specialty: doctorForm.specialty,
+            licenseNumber: doctorForm.licenseNumber,
+            experienceYears: Number(doctorForm.experienceYears || 0),
+            consultationFee: doctorForm.consultationFee ? Number(doctorForm.consultationFee) : undefined,
+            availableHours: doctorForm.availableHours,
+            availableDays: ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
+          },
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to add doctor')
+      }
+
+      setMessage('Doctor added successfully.')
+      setDoctorForm({
+        fullName: '',
+        email: '',
+        phone: '',
+        password: '',
+        specialty: '',
+        licenseNumber: '',
+        experienceYears: '0',
+        consultationFee: '',
+        availableHours: '09:00-17:00',
+      })
+      await Promise.all([loadDoctors(hospital.id), loadReport(hospital.id)])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to add doctor')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDeleteDoctor = async (doctorId: string) => {
+    if (!hospital) return
+    const confirmed = window.confirm('Delete this doctor? This removes their login and linked profile.')
+    if (!confirmed) return
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const params = new URLSearchParams({
+        action: 'delete-doctor',
+        hospitalId: hospital.id,
+        doctorId,
+      })
+
+      const response = await fetch(`/api/hospitals?${params.toString()}`, { method: 'DELETE' })
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to delete doctor')
+      }
+
+      setMessage('Doctor deleted successfully.')
+      await Promise.all([loadDoctors(hospital.id), loadReport(hospital.id)])
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to delete doctor')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const applyDoctorToSchedule = (doctor: DoctorRecord) => {
+    setScheduleForm({
+      doctorId: doctor.id,
+      availableDays: doctor.available_days || [],
+      availableHours: doctor.available_hours || '09:00-17:00',
+    })
+  }
+
+  const handleToggleDay = (day: string, checked: boolean) => {
+    setScheduleForm((prev) => {
+      const hasDay = prev.availableDays.includes(day)
+      if (checked && !hasDay) {
+        return { ...prev, availableDays: [...prev.availableDays, day] }
+      }
+      if (!checked && hasDay) {
+        return { ...prev, availableDays: prev.availableDays.filter((item) => item !== day) }
+      }
+      return prev
+    })
+  }
+
+  const handleSaveSchedule = async () => {
+    if (!hospital || !scheduleForm.doctorId) return
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/hospitals', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-doctor-schedule',
+          hospitalId: hospital.id,
+          doctorId: scheduleForm.doctorId,
+          schedule: {
+            availableDays: scheduleForm.availableDays,
+            availableHours: scheduleForm.availableHours,
+          },
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to update schedule')
+      }
+
+      setMessage('Doctor schedule updated successfully.')
+      await loadDoctors(hospital.id)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to update schedule')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleRegenerateReport = async () => {
+    if (!hospital) return
+    setBusy(true)
+    setMessage('')
+    try {
+      await loadReport(hospital.id)
+      setMessage('Report generated successfully.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to generate report')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDownloadReportCsv = () => {
+    if (!report) return
+
+    const rows = [
+      ['metric', 'value'],
+      ['total_doctors', String(report.summary.totalDoctors)],
+      ['total_appointments', String(report.summary.totalAppointments)],
+      ['completed_appointments', String(report.summary.completedAppointments)],
+      ['cancelled_appointments', String(report.summary.cancelledAppointments)],
+      ['no_show_appointments', String(report.summary.noShowAppointments)],
+      ['total_revenue', String(report.summary.totalRevenue)],
+      ['average_doctor_rating', String(report.summary.averageDoctorRating)],
+    ]
+
+    const csv = rows.map((row) => row.join(',')).join('\n')
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `hospital-report-${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const handleSaveSettings = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!hospital) return
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/hospitals', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-settings',
+          hospitalId: hospital.id,
+          settings: {
+            name: settingsForm.name,
+            address: settingsForm.address,
+            phone: settingsForm.phone,
+            email: settingsForm.email,
+            website: settingsForm.website || null,
+            totalBeds: Number(settingsForm.totalBeds),
+            availableBeds: Number(settingsForm.availableBeds),
+            departments: settingsForm.departments
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean),
+            services: settingsForm.services
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean),
+            emergencyServices: settingsForm.emergencyServices,
+          },
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to save settings')
+      }
+
+      setHospital((prev) => (prev ? { ...prev, ...result.data } : prev))
+      setMessage('System settings updated successfully.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to save settings')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (authLoading || loading) {
+    return (
+      <div className='container py-10'>
+        <p className='text-sm text-muted-foreground'>Loading hospital dashboard...</p>
+      </div>
+    )
+  }
+
+  if (!user || user.user_type !== 'hospital') {
+    return (
+      <div className='container py-10'>
+        <p className='text-sm text-muted-foreground'>Hospital access required.</p>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50/30 to-green-50/30">
-      {/* Header */}
-      <div className="border-b bg-white/90 backdrop-blur-sm sticky top-0 z-40">
-        <div className="container py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="p-2 bg-primary/10 rounded-lg">
-                <Building2 className="h-8 w-8 text-primary" />
+    <div className='min-h-screen bg-muted/20'>
+      <div className='border-b bg-background'>
+        <div className='container py-6'>
+          <div className='flex flex-wrap items-center justify-between gap-4'>
+            <div className='flex items-center gap-3'>
+              <div className='rounded-lg bg-primary/10 p-2'>
+                <Building2 className='h-6 w-6 text-primary' />
               </div>
               <div>
-                <h1 className="text-xl font-semibold">City General Hospital</h1>
-                <p className="text-sm text-muted-foreground">Administrative Dashboard • Dr. James Wilson, Chief Administrator</p>
+                <h1 className='text-xl font-semibold'>{hospital?.name || 'Hospital Dashboard'}</h1>
+                <p className='text-sm text-muted-foreground'>Doctor management, schedules, reports, and system settings</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-                <Badge className="ml-1 h-4 w-4 rounded-full p-0 text-xs">8</Badge>
-              </Button>
-              <Button variant="ghost" size="sm">
-                <Settings className="h-4 w-4" />
-              </Button>
-            </div>
+            <Badge variant='secondary'>{doctors.length} doctors</Badge>
           </div>
         </div>
       </div>
 
-      <div className="container py-8">
-        {/* Key Metrics */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-primary/10 rounded-lg">
-                  <Stethoscope className="h-5 w-5 text-primary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Active Doctors</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-2xl font-bold">48</p>
-                    <Badge variant="secondary" className="text-xs">+3</Badge>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+      <div className='container py-8 space-y-4'>
+        {message ? <p className='text-sm'>{message}</p> : null}
 
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-secondary/10 rounded-lg">
-                  <Users className="h-5 w-5 text-secondary" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Patients Today</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-2xl font-bold">324</p>
-                    <div className="flex items-center text-green-600 text-xs">
-                      <ArrowUpRight className="h-3 w-3" />
-                      12%
+        <Tabs defaultValue='doctor-management' className='space-y-4'>
+          <TabsList className='grid w-full grid-cols-2 md:grid-cols-4'>
+            <TabsTrigger value='doctor-management'>Doctor Management</TabsTrigger>
+            <TabsTrigger value='schedules'>Manage Schedules</TabsTrigger>
+            <TabsTrigger value='reports'>Generate Reports</TabsTrigger>
+            <TabsTrigger value='settings'>System Settings</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value='doctor-management'>
+            <div className='grid gap-4 lg:grid-cols-2'>
+              <Card>
+                <CardHeader>
+                  <CardTitle className='flex items-center gap-2'>
+                    <UserPlus className='h-4 w-4' /> Add Doctor
+                  </CardTitle>
+                  <CardDescription>Create a doctor login and hospital profile in one step.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleAddDoctor} className='space-y-3'>
+                    <div className='grid gap-3 md:grid-cols-2'>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorName'>Full name</Label>
+                        <Input
+                          id='doctorName'
+                          required
+                          value={doctorForm.fullName}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, fullName: event.target.value }))}
+                        />
+                      </div>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorEmail'>Email</Label>
+                        <Input
+                          id='doctorEmail'
+                          type='email'
+                          required
+                          value={doctorForm.email}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, email: event.target.value }))}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-accent/10 rounded-lg">
-                  <BedSingle className="h-5 w-5 text-accent" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Bed Occupancy</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-2xl font-bold">85%</p>
-                    <div className="flex items-center text-red-600 text-xs">
-                      <ArrowUpRight className="h-3 w-3" />
-                      5%
+                    <div className='grid gap-3 md:grid-cols-2'>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorPassword'>Temporary password</Label>
+                        <Input
+                          id='doctorPassword'
+                          type='password'
+                          required
+                          value={doctorForm.password}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, password: event.target.value }))}
+                        />
+                      </div>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorPhone'>Phone</Label>
+                        <Input
+                          id='doctorPhone'
+                          value={doctorForm.phone}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, phone: event.target.value }))}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
 
-          <Card className="card-hover">
-            <CardContent className="p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-green-100 rounded-lg">
-                  <DollarSign className="h-5 w-5 text-green-600" />
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Monthly Revenue</p>
-                  <div className="flex items-center gap-2">
-                    <p className="text-2xl font-bold">$2.4M</p>
-                    <div className="flex items-center text-green-600 text-xs">
-                      <ArrowUpRight className="h-3 w-3" />
-                      8%
+                    <div className='grid gap-3 md:grid-cols-2'>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorSpecialty'>Specialty</Label>
+                        <Input
+                          id='doctorSpecialty'
+                          required
+                          value={doctorForm.specialty}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, specialty: event.target.value }))}
+                        />
+                      </div>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorLicense'>License number</Label>
+                        <Input
+                          id='doctorLicense'
+                          required
+                          value={doctorForm.licenseNumber}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, licenseNumber: event.target.value }))}
+                        />
+                      </div>
                     </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
-          {/* Left Column */}
-          <div className="lg:col-span-2 space-y-6">
-            {/* Doctor Management */}
-            <Card>
-              <CardHeader className="flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle>Doctor Management</CardTitle>
-                  <CardDescription>Manage hospital medical staff</CardDescription>
-                </div>
-                <Button size="sm">
-                  <UserPlus className="h-4 w-4 mr-1" />
-                  Add Doctor
-                </Button>
-              </CardHeader>
-              <CardContent>
-                <div className="flex gap-2 mb-4">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                    <Input className="pl-9" placeholder="Search doctors..." />
-                  </div>
-                  <Button variant="outline">
-                    <Filter className="h-4 w-4" />
-                  </Button>
-                </div>
+                    <div className='grid gap-3 md:grid-cols-3'>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorExperience'>Experience years</Label>
+                        <Input
+                          id='doctorExperience'
+                          type='number'
+                          min={0}
+                          value={doctorForm.experienceYears}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, experienceYears: event.target.value }))}
+                        />
+                      </div>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorFee'>Consultation fee</Label>
+                        <Input
+                          id='doctorFee'
+                          type='number'
+                          min={0}
+                          value={doctorForm.consultationFee}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, consultationFee: event.target.value }))}
+                        />
+                      </div>
+                      <div className='space-y-1'>
+                        <Label htmlFor='doctorHours'>Available hours</Label>
+                        <Input
+                          id='doctorHours'
+                          value={doctorForm.availableHours}
+                          onChange={(event) => setDoctorForm((prev) => ({ ...prev, availableHours: event.target.value }))}
+                        />
+                      </div>
+                    </div>
 
-                <div className="space-y-3">
-                  {[
-                    {
-                      name: "Dr. Sarah Smith",
-                      specialty: "Cardiology",
-                      patients: 45,
-                      rating: 4.9,
-                      status: "available",
-                      avatar: "SS",
-                      schedule: "9 AM - 5 PM"
-                    },
-                    {
-                      name: "Dr. Michael Chen",
-                      specialty: "Neurology",
-                      patients: 38,
-                      rating: 4.8,
-                      status: "busy",
-                      avatar: "MC",
-                      schedule: "8 AM - 4 PM"
-                    },
-                    {
-                      name: "Dr. Emily Davis",
-                      specialty: "Pediatrics",
-                      patients: 52,
-                      rating: 4.9,
-                      status: "available",
-                      avatar: "ED",
-                      schedule: "10 AM - 6 PM"
-                    },
-                    {
-                      name: "Dr. Robert Wilson",
-                      specialty: "Surgery",
-                      patients: 23,
-                      rating: 4.7,
-                      status: "surgery",
-                      avatar: "RW",
-                      schedule: "7 AM - 3 PM"
-                    },
-                  ].map((doctor, index) => (
-                    <div key={index} className="flex items-center justify-between p-4 border rounded-lg card-hover">
-                      <div className="flex items-center gap-4">
-                        <Avatar className="h-12 w-12">
-                          <AvatarFallback>{doctor.avatar}</AvatarFallback>
-                        </Avatar>
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2 mb-1">
-                            <p className="font-medium">{doctor.name}</p>
-                            <Badge
-                              variant={
-                                doctor.status === 'available' ? 'default' :
-                                doctor.status === 'busy' ? 'secondary' :
-                                'destructive'
-                              }
-                              className="text-xs"
-                            >
-                              {doctor.status}
-                            </Badge>
+                    <Button type='submit' disabled={busy}>
+                      <UserPlus className='mr-2 h-4 w-4' />
+                      Add doctor
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle className='flex items-center gap-2'>
+                    <Stethoscope className='h-4 w-4' /> Current Doctors
+                  </CardTitle>
+                  <CardDescription>Delete doctor accounts or open them for schedule updates.</CardDescription>
+                </CardHeader>
+                <CardContent className='space-y-3'>
+                  {doctors.length === 0 ? (
+                    <p className='text-sm text-muted-foreground'>No doctors found for this hospital.</p>
+                  ) : (
+                    doctors.map((doctor) => (
+                      <div key={doctor.id} className='rounded border p-3 space-y-2'>
+                        <div className='flex items-center justify-between gap-2'>
+                          <div>
+                            <p className='font-medium'>{doctor.users?.full_name || 'Doctor'}</p>
+                            <p className='text-xs text-muted-foreground'>{doctor.users?.email || 'No email'}</p>
                           </div>
-                          <p className="text-sm text-muted-foreground">{doctor.specialty}</p>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground mt-1">
-                            <span>{doctor.patients} patients</span>
-                            <div className="flex items-center gap-1">
-                              <Star className="h-3 w-3 fill-yellow-400 text-yellow-400" />
-                              {doctor.rating}
-                            </div>
-                            <span>{doctor.schedule}</span>
-                          </div>
+                          <Badge variant='outline'>{doctor.specialty}</Badge>
                         </div>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button variant="ghost" size="sm">
-                          <Eye className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm">
-                          <MoreHorizontal className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Appointment Management */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Appointment Overview</CardTitle>
-                <CardDescription>Today's appointment statistics</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <Tabs defaultValue="today" className="w-full">
-                  <TabsList className="grid w-full grid-cols-3">
-                    <TabsTrigger value="today">Today</TabsTrigger>
-                    <TabsTrigger value="week">This Week</TabsTrigger>
-                    <TabsTrigger value="month">This Month</TabsTrigger>
-                  </TabsList>
-
-                  <TabsContent value="today" className="space-y-4">
-                    <div className="grid grid-cols-4 gap-4">
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-2xl font-bold text-green-600">89</p>
-                        <p className="text-xs text-muted-foreground">Completed</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-2xl font-bold text-blue-600">24</p>
-                        <p className="text-xs text-muted-foreground">In Progress</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-2xl font-bold text-orange-600">15</p>
-                        <p className="text-xs text-muted-foreground">Waiting</p>
-                      </div>
-                      <div className="text-center p-3 bg-muted/30 rounded-lg">
-                        <p className="text-2xl font-bold text-red-600">8</p>
-                        <p className="text-xs text-muted-foreground">Cancelled</p>
-                      </div>
-                    </div>
-
-                    <div className="space-y-3">
-                      <h4 className="font-medium">Recent Appointments</h4>
-                      {[
-                        {
-                          time: "2:30 PM",
-                          patient: "Alice Johnson",
-                          doctor: "Dr. Smith",
-                          type: "Consultation",
-                          status: "completed"
-                        },
-                        {
-                          time: "3:00 PM",
-                          patient: "Bob Wilson",
-                          doctor: "Dr. Chen",
-                          type: "Follow-up",
-                          status: "in-progress"
-                        },
-                        {
-                          time: "3:30 PM",
-                          patient: "Carol Davis",
-                          doctor: "Dr. Davis",
-                          type: "Checkup",
-                          status: "waiting"
-                        },
-                      ].map((appointment, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <div className="text-center">
-                              <p className="text-sm font-medium">{appointment.time}</p>
-                            </div>
-                            <div>
-                              <p className="font-medium text-sm">{appointment.patient}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {appointment.doctor} • {appointment.type}
-                              </p>
-                            </div>
-                          </div>
-                          <Badge
-                            variant={
-                              appointment.status === 'completed' ? 'default' :
-                              appointment.status === 'in-progress' ? 'secondary' :
-                              'outline'
-                            }
-                            className="text-xs"
+                        <p className='text-xs text-muted-foreground'>
+                          License: {doctor.license_number} | Hours: {doctor.available_hours}
+                        </p>
+                        <div className='flex gap-2'>
+                          <Button variant='outline' size='sm' onClick={() => applyDoctorToSchedule(doctor)}>
+                            <Calendar className='mr-1 h-4 w-4' /> Schedule
+                          </Button>
+                          <Button
+                            variant='destructive'
+                            size='sm'
+                            disabled={busy}
+                            onClick={() => handleDeleteDoctor(doctor.id)}
                           >
-                            {appointment.status}
-                          </Badge>
+                            <Trash2 className='mr-1 h-4 w-4' /> Delete
+                          </Button>
                         </div>
-                      ))}
-                    </div>
-                  </TabsContent>
+                      </div>
+                    ))
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
-                  <TabsContent value="week">
-                    <div className="text-center py-8">
-                      <BarChart3 className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground">Weekly appointment analytics</p>
-                      <Button variant="outline" className="mt-2">
-                        View Analytics
-                      </Button>
-                    </div>
-                  </TabsContent>
-
-                  <TabsContent value="month">
-                    <div className="text-center py-8">
-                      <PieChart className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
-                      <p className="text-muted-foreground">Monthly performance overview</p>
-                      <Button variant="outline" className="mt-2">
-                        Generate Report
-                      </Button>
-                    </div>
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-
-            {/* Department Performance */}
+          <TabsContent value='schedules'>
             <Card>
               <CardHeader>
-                <CardTitle>Department Performance</CardTitle>
-                <CardDescription>Performance metrics by department</CardDescription>
+                <CardTitle className='flex items-center gap-2'>
+                  <Calendar className='h-4 w-4' /> Manage Doctor Schedules
+                </CardTitle>
+                <CardDescription>Update available days and working hour range for each doctor.</CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-4'>
+                <div className='space-y-1'>
+                  <Label>Select doctor</Label>
+                  <div className='grid gap-2 md:grid-cols-2'>
+                    {doctors.map((doctor) => (
+                      <Button
+                        key={doctor.id}
+                        type='button'
+                        variant={scheduleForm.doctorId === doctor.id ? 'default' : 'outline'}
+                        onClick={() => applyDoctorToSchedule(doctor)}
+                      >
+                        {(doctor.users?.full_name || 'Doctor') + ' - ' + doctor.specialty}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+
+                {selectedDoctor ? (
+                  <>
+                    <div className='space-y-2'>
+                      <Label>Available days</Label>
+                      <div className='grid grid-cols-2 gap-2 md:grid-cols-4'>
+                        {dayOptions.map((day) => (
+                          <label key={day} className='flex items-center gap-2 rounded border px-2 py-1 text-sm'>
+                            <Checkbox
+                              checked={scheduleForm.availableDays.includes(day)}
+                              onCheckedChange={(checked) => handleToggleDay(day, checked === true)}
+                            />
+                            {day}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className='max-w-xs space-y-1'>
+                      <Label htmlFor='scheduleHours'>Available hours</Label>
+                      <Input
+                        id='scheduleHours'
+                        value={scheduleForm.availableHours}
+                        onChange={(event) =>
+                          setScheduleForm((prev) => ({ ...prev, availableHours: event.target.value }))
+                        }
+                      />
+                    </div>
+
+                    <Button disabled={busy} onClick={handleSaveSchedule}>
+                      Save schedule
+                    </Button>
+                  </>
+                ) : (
+                  <p className='text-sm text-muted-foreground'>Add a doctor first to manage schedules.</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value='reports'>
+            <Card>
+              <CardHeader>
+                <CardTitle className='flex items-center gap-2'>
+                  <FileBarChart className='h-4 w-4' /> Generate Reports
+                </CardTitle>
+                <CardDescription>Generate analytics across appointments, revenue, and specialties.</CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-4'>
+                <div className='grid gap-3 md:grid-cols-3'>
+                  <div className='space-y-1'>
+                    <Label htmlFor='fromDate'>From date</Label>
+                    <Input
+                      id='fromDate'
+                      type='date'
+                      value={reportFilter.fromDate}
+                      onChange={(event) => setReportFilter((prev) => ({ ...prev, fromDate: event.target.value }))}
+                    />
+                  </div>
+                  <div className='space-y-1'>
+                    <Label htmlFor='toDate'>To date</Label>
+                    <Input
+                      id='toDate'
+                      type='date'
+                      value={reportFilter.toDate}
+                      onChange={(event) => setReportFilter((prev) => ({ ...prev, toDate: event.target.value }))}
+                    />
+                  </div>
+                  <div className='flex items-end gap-2'>
+                    <Button disabled={busy} onClick={handleRegenerateReport}>
+                      Generate
+                    </Button>
+                    <Button type='button' variant='outline' onClick={handleDownloadReportCsv} disabled={!report}>
+                      <Download className='mr-1 h-4 w-4' /> CSV
+                    </Button>
+                  </div>
+                </div>
+
+                {report ? (
+                  <div className='space-y-4'>
+                    <div className='grid gap-3 md:grid-cols-4'>
+                      <Card>
+                        <CardContent className='pt-4'>
+                          <p className='text-xs text-muted-foreground'>Total doctors</p>
+                          <p className='text-2xl font-semibold'>{report.summary.totalDoctors}</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className='pt-4'>
+                          <p className='text-xs text-muted-foreground'>Appointments</p>
+                          <p className='text-2xl font-semibold'>{report.summary.totalAppointments}</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className='pt-4'>
+                          <p className='text-xs text-muted-foreground'>Completed</p>
+                          <p className='text-2xl font-semibold'>{report.summary.completedAppointments}</p>
+                        </CardContent>
+                      </Card>
+                      <Card>
+                        <CardContent className='pt-4'>
+                          <p className='text-xs text-muted-foreground'>Revenue</p>
+                          <p className='text-2xl font-semibold'>${report.summary.totalRevenue.toFixed(2)}</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+
+                    <div className='grid gap-4 md:grid-cols-2'>
+                      <div className='rounded border p-3'>
+                        <p className='mb-2 text-sm font-medium'>Appointments by status</p>
+                        <div className='space-y-1 text-sm'>
+                          {Object.entries(report.appointmentsByStatus).map(([key, value]) => (
+                            <div key={key} className='flex justify-between'>
+                              <span>{key}</span>
+                              <span>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className='rounded border p-3'>
+                        <p className='mb-2 text-sm font-medium'>Appointments by specialty</p>
+                        <div className='space-y-1 text-sm'>
+                          {Object.entries(report.appointmentsBySpecialty).map(([key, value]) => (
+                            <div key={key} className='flex justify-between'>
+                              <span>{key}</span>
+                              <span>{value}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <p className='text-sm text-muted-foreground'>No report generated yet.</p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value='settings'>
+            <Card>
+              <CardHeader>
+                <CardTitle className='flex items-center gap-2'>
+                  <Settings className='h-4 w-4' /> System Settings
+                </CardTitle>
+                <CardDescription>Update operational details and platform-level hospital preferences.</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {[
-                    {
-                      name: "Cardiology",
-                      patients: 125,
-                      satisfaction: 94,
-                      revenue: "$450K",
-                      growth: 12
-                    },
-                    {
-                      name: "Neurology",
-                      patients: 89,
-                      satisfaction: 91,
-                      revenue: "$380K",
-                      growth: 8
-                    },
-                    {
-                      name: "Pediatrics",
-                      patients: 203,
-                      satisfaction: 96,
-                      revenue: "$320K",
-                      growth: 15
-                    },
-                    {
-                      name: "Surgery",
-                      patients: 67,
-                      satisfaction: 89,
-                      revenue: "$890K",
-                      growth: -3
-                    },
-                  ].map((dept, index) => (
-                    <div key={index} className="p-4 border rounded-lg">
-                      <div className="flex items-center justify-between mb-3">
-                        <h4 className="font-medium">{dept.name}</h4>
-                        <div className="flex items-center gap-1 text-sm">
-                          {dept.growth > 0 ? (
-                            <ArrowUpRight className="h-4 w-4 text-green-600" />
-                          ) : (
-                            <ArrowDownRight className="h-4 w-4 text-red-600" />
-                          )}
-                          <span className={dept.growth > 0 ? "text-green-600" : "text-red-600"}>
-                            {Math.abs(dept.growth)}%
-                          </span>
-                        </div>
-                      </div>
-                      <div className="grid grid-cols-3 gap-4 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Patients</p>
-                          <p className="font-medium">{dept.patients}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Satisfaction</p>
-                          <div className="flex items-center gap-1">
-                            <p className="font-medium">{dept.satisfaction}%</p>
-                            <Progress value={dept.satisfaction} className="w-12 h-1" />
-                          </div>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Revenue</p>
-                          <p className="font-medium">{dept.revenue}</p>
-                        </div>
-                      </div>
+                <form className='space-y-4' onSubmit={handleSaveSettings}>
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    <div className='space-y-1'>
+                      <Label htmlFor='hospitalName'>Hospital name</Label>
+                      <Input
+                        id='hospitalName'
+                        value={settingsForm.name}
+                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, name: event.target.value }))}
+                      />
                     </div>
-                  ))}
-                </div>
+                    <div className='space-y-1'>
+                      <Label htmlFor='hospitalWebsite'>Website</Label>
+                      <Input
+                        id='hospitalWebsite'
+                        value={settingsForm.website}
+                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, website: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className='space-y-1'>
+                    <Label htmlFor='hospitalAddress'>Address</Label>
+                    <Input
+                      id='hospitalAddress'
+                      value={settingsForm.address}
+                      onChange={(event) => setSettingsForm((prev) => ({ ...prev, address: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    <div className='space-y-1'>
+                      <Label htmlFor='hospitalPhone'>Phone</Label>
+                      <Input
+                        id='hospitalPhone'
+                        value={settingsForm.phone}
+                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, phone: event.target.value }))}
+                      />
+                    </div>
+                    <div className='space-y-1'>
+                      <Label htmlFor='hospitalEmail'>Email</Label>
+                      <Input
+                        id='hospitalEmail'
+                        type='email'
+                        value={settingsForm.email}
+                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, email: event.target.value }))}
+                      />
+                    </div>
+                  </div>
+
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    <div className='space-y-1'>
+                      <Label htmlFor='totalBeds'>Total beds</Label>
+                      <Input
+                        id='totalBeds'
+                        type='number'
+                        min={0}
+                        value={settingsForm.totalBeds}
+                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, totalBeds: Number(event.target.value) }))}
+                      />
+                    </div>
+                    <div className='space-y-1'>
+                      <Label htmlFor='availableBeds'>Available beds</Label>
+                      <Input
+                        id='availableBeds'
+                        type='number'
+                        min={0}
+                        value={settingsForm.availableBeds}
+                        onChange={(event) =>
+                          setSettingsForm((prev) => ({ ...prev, availableBeds: Number(event.target.value) }))
+                        }
+                      />
+                    </div>
+                  </div>
+
+                  <div className='space-y-1'>
+                    <Label htmlFor='departments'>Departments (comma separated)</Label>
+                    <Input
+                      id='departments'
+                      value={settingsForm.departments}
+                      onChange={(event) => setSettingsForm((prev) => ({ ...prev, departments: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className='space-y-1'>
+                    <Label htmlFor='services'>Services (comma separated)</Label>
+                    <Input
+                      id='services'
+                      value={settingsForm.services}
+                      onChange={(event) => setSettingsForm((prev) => ({ ...prev, services: event.target.value }))}
+                    />
+                  </div>
+
+                  <div className='flex items-center justify-between rounded border p-3'>
+                    <div>
+                      <p className='text-sm font-medium'>Emergency services enabled</p>
+                      <p className='text-xs text-muted-foreground'>Allow emergency admission and listing in emergency searches.</p>
+                    </div>
+                    <Switch
+                      checked={settingsForm.emergencyServices}
+                      onCheckedChange={(value) => setSettingsForm((prev) => ({ ...prev, emergencyServices: value }))}
+                    />
+                  </div>
+
+                  <Button type='submit' disabled={busy}>
+                    Save settings
+                  </Button>
+                </form>
               </CardContent>
             </Card>
-          </div>
-
-          {/* Right Column */}
-          <div className="space-y-6">
-            {/* Hospital Analytics */}
-            <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5">
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-5 w-5 text-primary" />
-                  <CardTitle>Analytics Overview</CardTitle>
-                </div>
-                <CardDescription>Key performance indicators</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="p-3 bg-white/50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Patient Satisfaction</p>
-                      <p className="text-2xl font-bold text-green-600">92%</p>
-                    </div>
-                    <TrendingUp className="h-8 w-8 text-green-500" />
-                  </div>
-                  <Progress value={92} className="mt-2" />
-                </div>
-                
-                <div className="p-3 bg-white/50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Average Wait Time</p>
-                      <p className="text-2xl font-bold">18 min</p>
-                    </div>
-                    <Clock className="h-8 w-8 text-blue-500" />
-                  </div>
-                </div>
-                
-                <div className="p-3 bg-white/50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium">Emergency Response</p>
-                      <p className="text-2xl font-bold">4.2 min</p>
-                    </div>
-                    <AlertCircle className="h-8 w-8 text-red-500" />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Resource Management */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Resource Management</CardTitle>
-                <CardDescription>Current resource utilization</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>ICU Beds</span>
-                    <span>18/20</span>
-                  </div>
-                  <Progress value={90} className="h-2" />
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>General Beds</span>
-                    <span>145/180</span>
-                  </div>
-                  <Progress value={80} className="h-2" />
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>Operating Rooms</span>
-                    <span>6/8</span>
-                  </div>
-                  <Progress value={75} className="h-2" />
-                </div>
-                
-                <div>
-                  <div className="flex justify-between text-sm mb-2">
-                    <span>Equipment Usage</span>
-                    <span>65%</span>
-                  </div>
-                  <Progress value={65} className="h-2" />
-                </div>
-
-                <Button variant="outline" size="sm" className="w-full mt-4">
-                  View Full Report
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Alerts & Notifications */}
-            <Card>
-              <CardHeader>
-                <CardTitle>System Alerts</CardTitle>
-                <CardDescription>Important notifications</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="p-3 border-l-4 border-red-500 bg-red-50/50 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <AlertCircle className="h-4 w-4 text-red-500 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-red-900">Critical Equipment</p>
-                      <p className="text-xs text-red-700">MRI Machine #2 requires maintenance</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 border-l-4 border-orange-500 bg-orange-50/50 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <Clock className="h-4 w-4 text-orange-500 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-orange-900">Staff Shortage</p>
-                      <p className="text-xs text-orange-700">Night shift nursing understaffed</p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="p-3 border-l-4 border-green-500 bg-green-50/50 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-green-500 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium text-green-900">Certification Complete</p>
-                      <p className="text-xs text-green-700">Hospital accreditation renewed</p>
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-
-            {/* Quick Actions */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Quick Actions</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <UserPlus className="h-4 w-4 mr-2" />
-                  Add New Doctor
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Manage Schedules
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <BarChart3 className="h-4 w-4 mr-2" />
-                  Generate Reports
-                </Button>
-                <Button variant="outline" size="sm" className="w-full justify-start">
-                  <Settings className="h-4 w-4 mr-2" />
-                  System Settings
-                </Button>
-              </CardContent>
-            </Card>
-
-            {/* Subscription Info */}
-            <Card className="border-primary/20">
-              <CardHeader>
-                <CardTitle>MediSaathi Enterprise</CardTitle>
-                <CardDescription>Current subscription plan</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Plan</span>
-                  <Badge className="bg-primary">Enterprise</Badge>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Doctors</span>
-                  <span className="font-medium">48/100</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Storage</span>
-                  <span className="font-medium">2.4TB/5TB</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm">Next Billing</span>
-                  <span className="font-medium">Dec 23, 2024</span>
-                </div>
-                <Button size="sm" className="w-full">
-                  Manage Subscription
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        </div>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

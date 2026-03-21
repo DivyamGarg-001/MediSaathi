@@ -49,6 +49,15 @@ interface DashboardData {
   loading: boolean
 }
 
+interface WalletSummary {
+  totalExpenses: number
+  totalIncome: number
+  totalClaims: number
+  netSpend: number
+  byCategory: Record<string, number>
+  transactionCount: number
+}
+
 // Add dummy data for showcase
 const dummyData = {
   healthRecords: [
@@ -199,6 +208,7 @@ export default function PatientDashboard() {
     familyMembers: [],
     loading: true
   })
+  const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null)
   const [selectedVital, setSelectedVital] = useState('blood_pressure')
   const [vitalValue, setVitalValue] = useState('')
   const [isAddingVital, setIsAddingVital] = useState(false)
@@ -245,12 +255,14 @@ export default function PatientDashboard() {
         recordsResult,
         appointmentsResult,
         vitalsResult,
-        familyResult
+        familyResult,
+        walletSummaryResult
       ] = await Promise.all([
         fetch(`/api/health-records?action=get-records&userId=${user.id}`).then(res => res.json()),
         fetch(`/api/appointments?action=upcoming&userId=${user.id}&userType=patient`).then(res => res.json()),
         fetch(`/api/vital-signs?action=latest-readings&userId=${user.id}`).then(res => res.json()),
-        fetch(`/api/family-members?userId=${user.id}`).then(res => res.json())
+        fetch(`/api/family-members?userId=${user.id}`).then(res => res.json()),
+        fetch(`/api/health-wallet?action=get-summary&userId=${user.id}&months=1`).then(res => res.json())
       ])
 
       // Use dummy data if database returns empty or error, otherwise use database data
@@ -261,6 +273,7 @@ export default function PatientDashboard() {
         familyMembers: (familyResult.data && familyResult.data.length > 0) ? familyResult.data : dummyData.familyMembers,
         loading: false
       })
+      setWalletSummary(walletSummaryResult?.success ? walletSummaryResult.data : null)
     } catch (error) {
       console.error('Error loading dashboard data:', error)
       // Fallback to dummy data on error
@@ -271,7 +284,12 @@ export default function PatientDashboard() {
         familyMembers: dummyData.familyMembers,
         loading: false
       })
+      setWalletSummary(null)
     }
+  }
+
+  const formatCurrency = (amount: number) => {
+    return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   }
 
   const addVitalSign = async () => {
@@ -1161,18 +1179,20 @@ export default function PatientDashboard() {
                   <div className="p-3 bg-muted/30 rounded-lg">
                     <p className="text-sm text-muted-foreground">This Month</p>
                     <p className="text-2xl font-bold">
-                      ${(dashboardData.upcomingAppointments.length * 150 + dashboardData.healthRecords.length * 25).toFixed(0)}
+                      {formatCurrency(walletSummary?.totalExpenses || 0)}
                     </p>
-                    <p className="text-xs text-green-600">Based on your activity</p>
+                    <p className="text-xs text-green-600">
+                      {walletSummary ? `${walletSummary.transactionCount} transactions recorded` : 'No wallet transactions yet'}
+                    </p>
                   </div>
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Consultations</span>
-                      <span>${(dashboardData.upcomingAppointments.length * 150).toFixed(0)}</span>
+                      <span>{formatCurrency(walletSummary?.byCategory?.Consultation || 0)}</span>
                     </div>
                     <div className="flex justify-between text-sm">
                       <span>Lab Tests</span>
-                      <span>${(dashboardData.healthRecords.length * 25).toFixed(0)}</span>
+                      <span>{formatCurrency(walletSummary?.byCategory?.['Lab Tests'] || 0)}</span>
                     </div>
                   </div>
                   <Link href="/patient/wallet">

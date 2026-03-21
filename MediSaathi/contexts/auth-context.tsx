@@ -21,6 +21,8 @@ interface SignUpData {
   phone?: string
   specialty?: string
   license_number?: string
+  address?: string
+  website?: string
 }
 
 interface AuthResult {
@@ -180,6 +182,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           full_name: data.full_name,
           user_type: data.user_type,
           phone: data.phone || null,
+          specialty: data.specialty || null,
+          license_number: data.license_number || null,
+          address: data.address || null,
+          website: data.website || null,
         }),
       })
 
