@@ -12,14 +12,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
+  AlertTriangle,
+  Brain,
   Building2,
   Calendar,
   Download,
+  Loader2,
+  RefreshCw,
   Settings,
+  ShieldAlert,
+  Sparkles,
   Stethoscope,
   Trash2,
+  TrendingUp,
   UserPlus,
+  X,
   FileBarChart,
+  Pencil,
 } from 'lucide-react'
 
 type HospitalProfile = {
@@ -108,7 +117,30 @@ export default function HospitalDashboardPage() {
     availableHours: '09:00-17:00',
   })
 
+  const [editingDoctorId, setEditingDoctorId] = useState<string | null>(null)
+  const [editDoctorForm, setEditDoctorForm] = useState({
+    specialty: '',
+    experienceYears: '0',
+    consultationFee: '',
+    availableHours: '09:00-17:00',
+    licenseNumber: '',
+  })
+
   const [reportFilter, setReportFilter] = useState({ fromDate: '', toDate: '' })
+
+  // AI Insights state
+  interface HospitalInsight {
+    type: string
+    title: string
+    description: string
+    severity: string
+    recommendation: string
+  }
+  const [hospitalInsights, setHospitalInsights] = useState<HospitalInsight[]>([])
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false)
+  const [insightsCached, setInsightsCached] = useState(false)
+  const [insightsError, setInsightsError] = useState('')
+  const [insightsGeneratedAt, setInsightsGeneratedAt] = useState<string | null>(null)
 
   const [settingsForm, setSettingsForm] = useState({
     name: '',
@@ -118,10 +150,12 @@ export default function HospitalDashboardPage() {
     website: '',
     totalBeds: 0,
     availableBeds: 0,
-    departments: '',
-    services: '',
+    departments: [] as string[],
+    services: [] as string[],
     emergencyServices: true,
   })
+  const [deptInput, setDeptInput] = useState('')
+  const [serviceInput, setServiceInput] = useState('')
 
   const selectedDoctor = useMemo(
     () => doctors.find((doctor) => doctor.id === scheduleForm.doctorId),
@@ -139,6 +173,53 @@ export default function HospitalDashboardPage() {
       void loadHospitalData(user.id)
     }
   }, [user])
+
+  // Load cached AI insights on mount
+  useEffect(() => {
+    if (user?.user_type === 'hospital') {
+      void loadHospitalInsights()
+    }
+  }, [user])
+
+  const loadHospitalInsights = async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/ai/hospital/insights?user_id=${user.id}`).then(r => r.json())
+      if (res.success && res.insights?.length > 0) {
+        setHospitalInsights(res.insights)
+        setInsightsCached(res.cached || false)
+        setInsightsGeneratedAt(res.generated_at || null)
+      }
+    } catch {
+      // Silently fail — insights are optional
+    }
+  }
+
+  const generateHospitalInsights = async () => {
+    if (!user || isGeneratingInsights) return
+    setIsGeneratingInsights(true)
+    setInsightsError('')
+    try {
+      const res = await fetch('/api/ai/hospital/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id })
+      }).then(r => r.json())
+
+      if (res.success && res.insights?.length > 0) {
+        setHospitalInsights(res.insights)
+        setInsightsCached(false)
+        setInsightsGeneratedAt(res.generated_at || null)
+        setInsightsError('')
+      } else {
+        setInsightsError(res.error || 'Failed to generate insights')
+      }
+    } catch {
+      setInsightsError('AI service unavailable. Make sure the FastAPI backend is running.')
+    } finally {
+      setIsGeneratingInsights(false)
+    }
+  }
 
   const loadHospitalData = async (userId: string) => {
     setLoading(true)
@@ -161,8 +242,8 @@ export default function HospitalDashboardPage() {
         website: hospitalData.website || '',
         totalBeds: hospitalData.total_beds,
         availableBeds: hospitalData.available_beds,
-        departments: (hospitalData.departments || []).join(', '),
-        services: (hospitalData.services || []).join(', '),
+        departments: hospitalData.departments || [],
+        services: hospitalData.services || [],
         emergencyServices: hospitalData.emergency_services,
       })
 
@@ -292,6 +373,56 @@ export default function HospitalDashboardPage() {
     }
   }
 
+  const startEditDoctor = (doctor: DoctorRecord) => {
+    setEditingDoctorId(doctor.id)
+    setEditDoctorForm({
+      specialty: doctor.specialty,
+      experienceYears: String(doctor.experience_years || 0),
+      consultationFee: doctor.consultation_fee ? String(doctor.consultation_fee) : '',
+      availableHours: doctor.available_hours || '09:00-17:00',
+      licenseNumber: doctor.license_number,
+    })
+  }
+
+  const handleEditDoctor = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!hospital || !editingDoctorId) return
+
+    setBusy(true)
+    setMessage('')
+    try {
+      const response = await fetch('/api/hospitals', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update-doctor-profile',
+          hospitalId: hospital.id,
+          doctorId: editingDoctorId,
+          doctorUpdates: {
+            specialty: editDoctorForm.specialty,
+            experience_years: Number(editDoctorForm.experienceYears || 0),
+            consultation_fee: editDoctorForm.consultationFee ? Number(editDoctorForm.consultationFee) : null,
+            available_hours: editDoctorForm.availableHours,
+            license_number: editDoctorForm.licenseNumber,
+          },
+        }),
+      })
+
+      const result = await response.json()
+      if (!response.ok) {
+        throw new Error(result?.error || 'Failed to update doctor')
+      }
+
+      setMessage('Doctor profile updated successfully.')
+      setEditingDoctorId(null)
+      await loadDoctors(hospital.id)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Failed to update doctor')
+    } finally {
+      setBusy(false)
+    }
+  }
+
   const applyDoctorToSchedule = (doctor: DoctorRecord) => {
     setScheduleForm({
       doctorId: doctor.id,
@@ -406,14 +537,8 @@ export default function HospitalDashboardPage() {
             website: settingsForm.website || null,
             totalBeds: Number(settingsForm.totalBeds),
             availableBeds: Number(settingsForm.availableBeds),
-            departments: settingsForm.departments
-              .split(',')
-              .map((item) => item.trim())
-              .filter(Boolean),
-            services: settingsForm.services
-              .split(',')
-              .map((item) => item.trim())
-              .filter(Boolean),
+            departments: settingsForm.departments,
+            services: settingsForm.services,
             emergencyServices: settingsForm.emergencyServices,
           },
         }),
@@ -472,10 +597,11 @@ export default function HospitalDashboardPage() {
         {message ? <p className='text-sm'>{message}</p> : null}
 
         <Tabs defaultValue='doctor-management' className='space-y-4'>
-          <TabsList className='grid w-full grid-cols-2 md:grid-cols-4'>
+          <TabsList className='grid w-full grid-cols-2 md:grid-cols-5'>
             <TabsTrigger value='doctor-management'>Doctor Management</TabsTrigger>
             <TabsTrigger value='schedules'>Manage Schedules</TabsTrigger>
             <TabsTrigger value='reports'>Generate Reports</TabsTrigger>
+            <TabsTrigger value='ai-insights'>AI Insights</TabsTrigger>
             <TabsTrigger value='settings'>System Settings</TabsTrigger>
           </TabsList>
 
@@ -609,26 +735,86 @@ export default function HospitalDashboardPage() {
                         <div className='flex items-center justify-between gap-2'>
                           <div>
                             <p className='font-medium'>{doctor.users?.full_name || 'Doctor'}</p>
-                            <p className='text-xs text-muted-foreground'>{doctor.users?.email || 'No email'}</p>
+                            <p className='text-xs text-muted-foreground'>{doctor.users?.email || 'No email'}{doctor.users?.phone ? ` | ${doctor.users.phone}` : ''}</p>
                           </div>
                           <Badge variant='outline'>{doctor.specialty}</Badge>
                         </div>
                         <p className='text-xs text-muted-foreground'>
                           License: {doctor.license_number} | Hours: {doctor.available_hours}
+                          {doctor.experience_years ? ` | ${doctor.experience_years} yrs exp` : ''}
+                          {doctor.consultation_fee ? ` | ₹${doctor.consultation_fee}` : ''}
                         </p>
-                        <div className='flex gap-2'>
-                          <Button variant='outline' size='sm' onClick={() => applyDoctorToSchedule(doctor)}>
-                            <Calendar className='mr-1 h-4 w-4' /> Schedule
-                          </Button>
-                          <Button
-                            variant='destructive'
-                            size='sm'
-                            disabled={busy}
-                            onClick={() => handleDeleteDoctor(doctor.id)}
-                          >
-                            <Trash2 className='mr-1 h-4 w-4' /> Delete
-                          </Button>
-                        </div>
+
+                        {editingDoctorId === doctor.id ? (
+                          <form onSubmit={handleEditDoctor} className='space-y-2 border-t pt-2'>
+                            <div className='grid gap-2 md:grid-cols-2'>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>Specialty</Label>
+                                <Input
+                                  required
+                                  value={editDoctorForm.specialty}
+                                  onChange={(e) => setEditDoctorForm((prev) => ({ ...prev, specialty: e.target.value }))}
+                                />
+                              </div>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>License Number</Label>
+                                <Input
+                                  required
+                                  value={editDoctorForm.licenseNumber}
+                                  onChange={(e) => setEditDoctorForm((prev) => ({ ...prev, licenseNumber: e.target.value }))}
+                                />
+                              </div>
+                            </div>
+                            <div className='grid gap-2 md:grid-cols-3'>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>Experience (years)</Label>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  value={editDoctorForm.experienceYears}
+                                  onChange={(e) => setEditDoctorForm((prev) => ({ ...prev, experienceYears: e.target.value }))}
+                                />
+                              </div>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>Consultation Fee</Label>
+                                <Input
+                                  type='number'
+                                  min={0}
+                                  value={editDoctorForm.consultationFee}
+                                  onChange={(e) => setEditDoctorForm((prev) => ({ ...prev, consultationFee: e.target.value }))}
+                                />
+                              </div>
+                              <div className='space-y-1'>
+                                <Label className='text-xs'>Available Hours</Label>
+                                <Input
+                                  value={editDoctorForm.availableHours}
+                                  onChange={(e) => setEditDoctorForm((prev) => ({ ...prev, availableHours: e.target.value }))}
+                                />
+                              </div>
+                            </div>
+                            <div className='flex gap-2'>
+                              <Button type='submit' size='sm' disabled={busy}>Save</Button>
+                              <Button type='button' variant='outline' size='sm' onClick={() => setEditingDoctorId(null)}>Cancel</Button>
+                            </div>
+                          </form>
+                        ) : (
+                          <div className='flex gap-2'>
+                            <Button variant='outline' size='sm' onClick={() => startEditDoctor(doctor)}>
+                              <Pencil className='mr-1 h-4 w-4' /> Edit
+                            </Button>
+                            <Button variant='outline' size='sm' onClick={() => applyDoctorToSchedule(doctor)}>
+                              <Calendar className='mr-1 h-4 w-4' /> Schedule
+                            </Button>
+                            <Button
+                              variant='destructive'
+                              size='sm'
+                              disabled={busy}
+                              onClick={() => handleDeleteDoctor(doctor.id)}
+                            >
+                              <Trash2 className='mr-1 h-4 w-4' /> Delete
+                            </Button>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -801,6 +987,107 @@ export default function HospitalDashboardPage() {
             </Card>
           </TabsContent>
 
+          <TabsContent value='ai-insights'>
+            <Card className='border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5'>
+              <CardHeader>
+                <div className='flex items-center justify-between'>
+                  <div className='flex items-center gap-2'>
+                    <Brain className='h-5 w-5 text-primary' />
+                    <CardTitle>AI Operational Insights</CardTitle>
+                  </div>
+                  <Button
+                    size='sm'
+                    variant={hospitalInsights.length > 0 ? 'outline' : 'default'}
+                    onClick={generateHospitalInsights}
+                    disabled={isGeneratingInsights}
+                    className='text-xs'
+                  >
+                    {isGeneratingInsights ? (
+                      <><Loader2 className='h-3 w-3 mr-1 animate-spin' /> Analyzing...</>
+                    ) : hospitalInsights.length > 0 ? (
+                      <><RefreshCw className='h-3 w-3 mr-1' /> Refresh</>
+                    ) : (
+                      <><Sparkles className='h-3 w-3 mr-1' /> Generate</>
+                    )}
+                  </Button>
+                </div>
+                <CardDescription>
+                  {insightsGeneratedAt
+                    ? `Last updated: ${new Date(insightsGeneratedAt).toLocaleString()}`
+                    : 'AI-powered analysis of hospital operations — bed utilization, doctor workload, appointment efficiency, and more'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className='space-y-3'>
+                {insightsError && (
+                  <div className='p-3 bg-red-50 border border-red-200 rounded-lg'>
+                    <p className='text-xs text-red-600'>{insightsError}</p>
+                  </div>
+                )}
+
+                {hospitalInsights.length > 0 ? (
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    {hospitalInsights.map((insight, idx) => {
+                      const severityConfig: Record<string, { border: string; bg: string; icon: React.ReactNode }> = {
+                        low: { border: 'border-l-green-500', bg: 'bg-green-50/50', icon: <TrendingUp className='h-4 w-4 text-green-500 mt-0.5 shrink-0' /> },
+                        medium: { border: 'border-l-yellow-500', bg: 'bg-yellow-50/50', icon: <AlertTriangle className='h-4 w-4 text-yellow-500 mt-0.5 shrink-0' /> },
+                        high: { border: 'border-l-orange-500', bg: 'bg-orange-50/50', icon: <ShieldAlert className='h-4 w-4 text-orange-500 mt-0.5 shrink-0' /> },
+                        critical: { border: 'border-l-red-500', bg: 'bg-red-50/50', icon: <ShieldAlert className='h-4 w-4 text-red-500 mt-0.5 shrink-0' /> },
+                      }
+                      const config = severityConfig[insight.severity] || severityConfig.low
+                      const typeLabels: Record<string, string> = {
+                        bed_utilization: 'Beds',
+                        department_performance: 'Departments',
+                        doctor_workload: 'Workload',
+                        appointment_efficiency: 'Appointments',
+                        revenue_trend: 'Revenue',
+                      }
+                      return (
+                        <div key={idx} className={`p-4 rounded-lg border-l-4 ${config.border} ${config.bg}`}>
+                          <div className='flex items-start gap-2'>
+                            {config.icon}
+                            <div className='min-w-0 flex-1'>
+                              <div className='flex items-center gap-2 mb-1'>
+                                <p className='text-sm font-medium'>{insight.title}</p>
+                                <Badge variant='outline' className='text-[10px] px-1.5 py-0'>
+                                  {typeLabels[insight.type] || insight.type}
+                                </Badge>
+                              </div>
+                              <p className='text-xs text-muted-foreground'>{insight.description}</p>
+                              {insight.recommendation && (
+                                <p className='text-xs text-primary mt-1.5 font-medium'>{insight.recommendation}</p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                ) : !isGeneratingInsights ? (
+                  <div className='text-center py-8'>
+                    <Sparkles className='mx-auto h-10 w-10 text-muted-foreground/50' />
+                    <p className='mt-3 text-sm text-muted-foreground'>
+                      Click &quot;Generate&quot; to get AI-powered operational insights
+                    </p>
+                    <p className='text-xs text-muted-foreground mt-1'>
+                      Analyzes bed utilization, doctor workload, appointments, and department performance
+                    </p>
+                  </div>
+                ) : (
+                  <div className='text-center py-8'>
+                    <Loader2 className='mx-auto h-10 w-10 text-primary animate-spin' />
+                    <p className='mt-3 text-sm text-muted-foreground'>Analyzing hospital operations data...</p>
+                  </div>
+                )}
+
+                {insightsCached && hospitalInsights.length > 0 && (
+                  <p className='text-[10px] text-muted-foreground text-center'>
+                    Showing cached insights. Click Refresh for latest analysis.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
           <TabsContent value='settings'>
             <Card>
               <CardHeader>
@@ -864,42 +1151,114 @@ export default function HospitalDashboardPage() {
                       <Label htmlFor='totalBeds'>Total beds</Label>
                       <Input
                         id='totalBeds'
-                        type='number'
-                        min={0}
+                        type='text'
+                        inputMode='numeric'
+                        pattern='[0-9]*'
                         value={settingsForm.totalBeds}
-                        onChange={(event) => setSettingsForm((prev) => ({ ...prev, totalBeds: Number(event.target.value) }))}
+                        onChange={(event) => {
+                          const val = event.target.value.replace(/\D/g, '')
+                          setSettingsForm((prev) => ({ ...prev, totalBeds: val === '' ? 0 : Number(val) }))
+                        }}
                       />
                     </div>
                     <div className='space-y-1'>
                       <Label htmlFor='availableBeds'>Available beds</Label>
                       <Input
                         id='availableBeds'
-                        type='number'
-                        min={0}
+                        type='text'
+                        inputMode='numeric'
+                        pattern='[0-9]*'
                         value={settingsForm.availableBeds}
-                        onChange={(event) =>
-                          setSettingsForm((prev) => ({ ...prev, availableBeds: Number(event.target.value) }))
-                        }
+                        onChange={(event) => {
+                          const val = event.target.value.replace(/\D/g, '')
+                          setSettingsForm((prev) => ({ ...prev, availableBeds: val === '' ? 0 : Number(val) }))
+                        }}
                       />
                     </div>
                   </div>
 
-                  <div className='space-y-1'>
-                    <Label htmlFor='departments'>Departments (comma separated)</Label>
-                    <Input
-                      id='departments'
-                      value={settingsForm.departments}
-                      onChange={(event) => setSettingsForm((prev) => ({ ...prev, departments: event.target.value }))}
-                    />
+                  <div className='space-y-2'>
+                    <Label>Departments</Label>
+                    <div className='flex gap-2'>
+                      <Input
+                        placeholder='Type a department and press Enter'
+                        value={deptInput}
+                        onChange={(e) => setDeptInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const val = deptInput.trim()
+                            if (val && !settingsForm.departments.includes(val)) {
+                              setSettingsForm((prev) => ({ ...prev, departments: [...prev.departments, val] }))
+                            }
+                            setDeptInput('')
+                          }
+                        }}
+                      />
+                    </div>
+                    {settingsForm.departments.length > 0 && (
+                      <div className='flex flex-wrap gap-2'>
+                        {settingsForm.departments.map((dept) => (
+                          <Badge key={dept} variant='secondary' className='pl-2.5 pr-1 py-1 text-sm gap-1'>
+                            {dept}
+                            <button
+                              type='button'
+                              className='ml-1 rounded-full hover:bg-muted p-0.5'
+                              onClick={() =>
+                                setSettingsForm((prev) => ({
+                                  ...prev,
+                                  departments: prev.departments.filter((d) => d !== dept),
+                                }))
+                              }
+                            >
+                              <X className='h-3 w-3' />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
-                  <div className='space-y-1'>
-                    <Label htmlFor='services'>Services (comma separated)</Label>
-                    <Input
-                      id='services'
-                      value={settingsForm.services}
-                      onChange={(event) => setSettingsForm((prev) => ({ ...prev, services: event.target.value }))}
-                    />
+                  <div className='space-y-2'>
+                    <Label>Services</Label>
+                    <div className='flex gap-2'>
+                      <Input
+                        placeholder='Type a service and press Enter'
+                        value={serviceInput}
+                        onChange={(e) => setServiceInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault()
+                            const val = serviceInput.trim()
+                            if (val && !settingsForm.services.includes(val)) {
+                              setSettingsForm((prev) => ({ ...prev, services: [...prev.services, val] }))
+                            }
+                            setServiceInput('')
+                          }
+                        }}
+                      />
+                    </div>
+                    {settingsForm.services.length > 0 && (
+                      <div className='flex flex-wrap gap-2'>
+                        {settingsForm.services.map((svc) => (
+                          <Badge key={svc} variant='secondary' className='pl-2.5 pr-1 py-1 text-sm gap-1'>
+                            {svc}
+                            <button
+                              type='button'
+                              className='ml-1 rounded-full hover:bg-muted p-0.5'
+                              onClick={() =>
+                                setSettingsForm((prev) => ({
+                                  ...prev,
+                                  services: prev.services.filter((s) => s !== svc),
+                                }))
+                              }
+                            >
+                              <X className='h-3 w-3' />
+                            </button>
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className='flex items-center justify-between rounded border p-3'>

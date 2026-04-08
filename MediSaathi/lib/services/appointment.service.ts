@@ -98,6 +98,21 @@ export class AppointmentService {
   // Book new appointment
   static async bookAppointment(appointmentData: AppointmentInsert) {
     try {
+      // Check if doctor is available on this day
+      const { data: doctorInfo } = await supabase
+        .from('doctors')
+        .select('available_days')
+        .eq('id', appointmentData.doctor_id)
+        .single()
+
+      if (doctorInfo?.available_days?.length) {
+        const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+        const requestedDay = dayNames[new Date(appointmentData.appointment_date).getUTCDay()]
+        if (!doctorInfo.available_days.map((d: string) => d.toLowerCase()).includes(requestedDay)) {
+          throw new Error('Doctor is not available on this day')
+        }
+      }
+
       // Check for conflicts
       const { data: conflicts } = await supabase
         .from('appointments')
@@ -190,6 +205,14 @@ export class AppointmentService {
 
       const doctor = doctorData.data
       const appointments = appointmentsData.data || []
+
+      // Check if doctor is available on this day of the week
+      const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday']
+      const requestedDay = dayNames[new Date(date).getUTCDay()]
+      const availableDays: string[] = doctor.available_days || []
+      if (availableDays.length > 0 && !availableDays.map((d: string) => d.toLowerCase()).includes(requestedDay)) {
+        return { data: [], error: null } // Doctor not available on this day
+      }
 
       // Parse working hours (e.g., "09:00-17:00")
       const [startTime, endTime] = doctor.available_hours.split('-')

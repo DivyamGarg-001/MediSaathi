@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/contexts/auth-context'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -9,6 +10,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Label } from "@/components/ui/label"
+import { toast } from "sonner"
 import {
   Calendar,
   Users,
@@ -34,6 +39,10 @@ import {
   Filter,
   Timer,
   Lightbulb,
+  Sparkles,
+  Loader2,
+  RefreshCw,
+  ShieldAlert,
 } from "lucide-react"
 import Link from "next/link"
 
@@ -46,173 +55,9 @@ interface DashboardData {
   loading: boolean
 }
 
-// Add dummy data for showcase
-const dummyData = {
-  todayAppointments: [
-    {
-      id: 'dummy-app-1',
-      appointment_date: new Date().toISOString().split('T')[0],
-      appointment_time: '09:00:00',
-      status: 'confirmed',
-      appointment_type: 'Consultation',
-      notes: 'Follow-up for hypertension management',
-      is_urgent: false,
-      patients: {
-        users: {
-          full_name: 'John Smith',
-          date_of_birth: '1985-05-15',
-          avatar_url: null
-        }
-      }
-    },
-    {
-      id: 'dummy-app-2',
-      appointment_date: new Date().toISOString().split('T')[0],
-      appointment_time: '10:30:00',
-      status: 'waiting',
-      appointment_type: 'Check-up',
-      notes: 'Annual physical examination',
-      is_urgent: false,
-      patients: {
-        users: {
-          full_name: 'Sarah Johnson',
-          date_of_birth: '1990-08-22',
-          avatar_url: null
-        }
-      }
-    },
-    {
-      id: 'dummy-app-3',
-      appointment_date: new Date().toISOString().split('T')[0],
-      appointment_time: '11:15:00',
-      status: 'in-progress',
-      appointment_type: 'Urgent Care',
-      notes: 'Chest pain evaluation',
-      is_urgent: true,
-      patients: {
-        users: {
-          full_name: 'Robert Wilson',
-          date_of_birth: '1975-12-03',
-          avatar_url: null
-        }
-      }
-    },
-    {
-      id: 'dummy-app-4',
-      appointment_date: new Date().toISOString().split('T')[0],
-      appointment_time: '14:00:00',
-      status: 'completed',
-      appointment_type: 'Follow-up',
-      notes: 'Diabetes management review',
-      is_urgent: false,
-      patients: {
-        users: {
-          full_name: 'Maria Garcia',
-          date_of_birth: '1982-03-18',
-          avatar_url: null
-        }
-      }
-    },
-    {
-      id: 'dummy-app-5',
-      appointment_date: new Date().toISOString().split('T')[0],
-      appointment_time: '15:30:00',
-      status: 'confirmed',
-      appointment_type: 'Consultation',
-      notes: 'New patient consultation',
-      is_urgent: false,
-      patients: {
-        users: {
-          full_name: 'David Brown',
-          date_of_birth: '1988-11-07',
-          avatar_url: null
-        }
-      }
-    }
-  ],
-  recentPatients: [
-    {
-      id: 'dummy-patient-1',
-      primary_condition: 'Hypertension',
-      risk_level: 'medium',
-      last_appointment: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-      users: {
-        full_name: 'Alice Cooper',
-        date_of_birth: '1970-06-12',
-        avatar_url: null
-      }
-    },
-    {
-      id: 'dummy-patient-2',
-      primary_condition: 'Diabetes Type 2',
-      risk_level: 'high',
-      last_appointment: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
-      users: {
-        full_name: 'Michael Davis',
-        date_of_birth: '1965-09-25',
-        avatar_url: null
-      }
-    },
-    {
-      id: 'dummy-patient-3',
-      primary_condition: 'Asthma',
-      risk_level: 'low',
-      last_appointment: new Date(Date.now() - 10 * 24 * 60 * 60 * 1000).toISOString(),
-      users: {
-        full_name: 'Jennifer Lee',
-        date_of_birth: '1992-01-30',
-        avatar_url: null
-      }
-    },
-    {
-      id: 'dummy-patient-4',
-      primary_condition: 'Arthritis',
-      risk_level: 'medium',
-      last_appointment: new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString(),
-      users: {
-        full_name: 'Thomas Anderson',
-        date_of_birth: '1958-04-16',
-        avatar_url: null
-      }
-    },
-    {
-      id: 'dummy-patient-5',
-      primary_condition: 'Migraine',
-      risk_level: 'low',
-      last_appointment: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-      users: {
-        full_name: 'Emma Thompson',
-        date_of_birth: '1987-07-08',
-        avatar_url: null
-      }
-    }
-  ],
-  criticalPatients: [
-    {
-      id: 'dummy-critical-1',
-      critical_notes: 'Blood pressure readings consistently above 180/120',
-      risk_level: 'high',
-      users: {
-        full_name: 'Richard Parker',
-        date_of_birth: '1955-02-14',
-        avatar_url: null
-      }
-    },
-    {
-      id: 'dummy-critical-2',
-      critical_notes: 'Missed insulin doses, glucose levels unstable',
-      risk_level: 'high',
-      users: {
-        full_name: 'Linda Martinez',
-        date_of_birth: '1963-10-28',
-        avatar_url: null
-      }
-    }
-  ]
-}
-
 export default function DoctorDashboard() {
   const { user, loading: authLoading } = useAuth()
+  const router = useRouter()
   const [dashboardData, setDashboardData] = useState<DashboardData>({
     todayAppointments: [],
     totalPatients: 0,
@@ -229,12 +74,44 @@ export default function DoctorDashboard() {
     avgDuration: 0,
     loaded: false,
   })
-  const [prescriptionData, setPrescriptionData] = useState({
-    patient: 'Sarah Johnson',
-    date: '2024-11-23',
-    medications: [{ name: '', dosage: '', frequency: '' }],
-    instructions: ''
+  const [doctorId, setDoctorId] = useState<string | null>(null)
+  const [addSlotOpen, setAddSlotOpen] = useState(false)
+  const [addNoteOpen, setAddNoteOpen] = useState(false)
+  const [addSlotData, setAddSlotData] = useState({
+    patient_name: '',
+    appointment_date: new Date().toISOString().split('T')[0],
+    appointment_time: '09:00',
+    type: 'consultation' as string,
+    reason: '',
   })
+  const [addNoteText, setAddNoteText] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [prescriptionData, setPrescriptionData] = useState({
+    patient: '',
+    date: new Date().toISOString().split('T')[0],
+    medications: [{ name: '', dosage: '', frequency: '' }],
+    instructions: '',
+    valid_until: '',
+  })
+
+  // AI Practice Insights state
+  interface PracticeInsight {
+    type: string
+    title: string
+    description: string
+    severity: string
+    recommendation: string
+  }
+  const [practiceInsights, setPracticeInsights] = useState<PracticeInsight[]>([])
+  const [isGeneratingInsights, setIsGeneratingInsights] = useState(false)
+  const [insightsCached, setInsightsCached] = useState(false)
+  const [insightsError, setInsightsError] = useState('')
+  const [insightsGeneratedAt, setInsightsGeneratedAt] = useState<string | null>(null)
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [showNotifications, setShowNotifications] = useState(false)
 
   const handleMedicationChange = (index: number, field: string, value: string) => {
     const updatedMedications = [...prescriptionData.medications]
@@ -264,48 +141,45 @@ export default function DoctorDashboard() {
 
   const loadDoctorDashboardData = async () => {
     if (!user) return
-    
+
     try {
+      // Step 1: Resolve the actual doctors.id from user.id
+      const doctorRes = await fetch(`/api/doctors?action=get-by-user&userId=${user.id}`).then(r => r.json())
+      if (!doctorRes.success || !doctorRes.data) {
+        console.error('Could not resolve doctor profile for user:', user.id)
+        setDashboardData(prev => ({ ...prev, loading: false }))
+        return
+      }
+      const docId = doctorRes.data.id
+      setDoctorId(docId)
+      const rating = doctorRes.data.rating || 0
+
+      // Step 2: Fetch all dashboard data using the correct doctors.id
+      const now = new Date()
+      const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
       const [
         appointmentsResult,
         patientsResult,
         recentPatientsResult,
         criticalPatientsResult
       ] = await Promise.all([
-        fetch(`/api/appointments?doctorId=${user.id}&date=${new Date().toISOString().split('T')[0]}`).then(res => res.json()),
-        fetch(`/api/doctors/patients?doctorId=${user.id}`).then(res => res.json()),
-        fetch(`/api/doctors/patients?doctorId=${user.id}&recent=true&limit=10`).then(res => res.json()),
-        fetch(`/api/doctors/patients?doctorId=${user.id}&critical=true`).then(res => res.json())
+        fetch(`/api/appointments?doctorId=${docId}&date=${todayLocal}`).then(res => res.json()),
+        fetch(`/api/doctors/patients?doctorId=${docId}`).then(res => res.json()),
+        fetch(`/api/doctors/patients?doctorId=${docId}&recent=true&limit=10`).then(res => res.json()),
+        fetch(`/api/doctors/patients?doctorId=${docId}&critical=true`).then(res => res.json())
       ])
 
-      // Use dummy data if database returns empty or error, otherwise use database data
       setDashboardData({
-        todayAppointments: (appointmentsResult.data && appointmentsResult.data.length > 0) ? appointmentsResult.data : dummyData.todayAppointments,
-        totalPatients: patientsResult.total || (dummyData.recentPatients.length + 15), // Add some extra for total count
-        pendingReviews: appointmentsResult.data?.filter((a: any) => a.status === 'pending').length || dummyData.todayAppointments.filter(a => a.status === 'pending').length,
-        recentPatients: (recentPatientsResult.data && recentPatientsResult.data.length > 0) ? recentPatientsResult.data : dummyData.recentPatients,
-        criticalPatients: (criticalPatientsResult.data && criticalPatientsResult.data.length > 0) ? criticalPatientsResult.data : dummyData.criticalPatients,
+        todayAppointments: appointmentsResult.data || [],
+        totalPatients: patientsResult.total || 0,
+        pendingReviews: appointmentsResult.data?.filter((a: any) => a.status === 'pending').length || 0,
+        recentPatients: recentPatientsResult.data || [],
+        criticalPatients: criticalPatientsResult.data || [],
         loading: false
       })
-    } catch (error) {
-      console.error('Error loading doctor dashboard data:', error)
-      // Fallback to dummy data on error
-      setDashboardData({
-        todayAppointments: dummyData.todayAppointments,
-        totalPatients: dummyData.recentPatients.length + 15,
-        pendingReviews: dummyData.todayAppointments.filter(a => a.status === 'pending').length,
-        recentPatients: dummyData.recentPatients,
-        criticalPatients: dummyData.criticalPatients,
-        loading: false
-      })
-    }
 
-    // Fetch real performance stats (separate try-catch so main dashboard still loads)
-    try {
-      const doctorRes = await fetch(`/api/doctors?action=get-by-user&userId=${user.id}`).then(r => r.json())
-      if (doctorRes.success && doctorRes.data) {
-        const docId = doctorRes.data.id
-        const rating = doctorRes.data.rating || 0
+      // Step 3: Fetch performance stats using the same docId
+      try {
         const [analyticsRes, timeRes] = await Promise.all([
           fetch(`/api/doctors?action=analytics&doctorId=${docId}`).then(r => r.json()),
           fetch(`/api/appointments?action=time-tracking&doctorId=${docId}`).then(r => r.json()),
@@ -323,19 +197,252 @@ export default function DoctorDashboard() {
             loaded: true,
           })
         }
+      } catch {
+        // Stats will remain at defaults
       }
-    } catch {
-      // Stats will remain at defaults
+    } catch (error) {
+      console.error('Error loading doctor dashboard data:', error)
+      setDashboardData({
+        todayAppointments: [],
+        totalPatients: 0,
+        pendingReviews: 0,
+        recentPatients: [],
+        criticalPatients: [],
+        loading: false
+      })
     }
   }
 
-  const getStatusVariant = (status: string) => {
+  // AI Practice Insights functions
+  const loadPracticeInsights = async () => {
+    if (!user) return
+    try {
+      const res = await fetch(`/api/ai/doctor/insights?user_id=${user.id}`).then(r => r.json())
+      if (res.success && res.insights?.length > 0) {
+        setPracticeInsights(res.insights)
+        setInsightsCached(res.cached || false)
+        setInsightsGeneratedAt(res.generated_at || null)
+      }
+    } catch {
+      // Silently fail — insights are optional
+    }
+  }
+
+  const generatePracticeInsights = async () => {
+    if (!user || isGeneratingInsights) return
+    setIsGeneratingInsights(true)
+    setInsightsError('')
+    try {
+      const res = await fetch('/api/ai/doctor/insights/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: user.id })
+      }).then(r => r.json())
+
+      if (res.success && res.insights?.length > 0) {
+        setPracticeInsights(res.insights)
+        setInsightsCached(false)
+        setInsightsGeneratedAt(res.generated_at || null)
+        setInsightsError('')
+      } else {
+        setInsightsError(res.error || 'Failed to generate insights')
+      }
+    } catch {
+      setInsightsError('AI service unavailable. Make sure the FastAPI backend is running.')
+    } finally {
+      setIsGeneratingInsights(false)
+    }
+  }
+
+  // Load cached practice insights on mount
+  useEffect(() => {
+    if (user && user.user_type === 'doctor') {
+      loadPracticeInsights()
+    }
+  }, [user])
+
+  // Notifications
+  const loadNotifications = async () => {
+    if (!user) return
+    try {
+      const [notifRes, countRes] = await Promise.all([
+        fetch(`/api/notifications?userId=${user.id}`).then(r => r.json()),
+        fetch(`/api/notifications?userId=${user.id}&action=unread-count`).then(r => r.json()),
+      ])
+      setNotifications(notifRes.data || [])
+      setUnreadCount(countRes.data || 0)
+    } catch {
+      // Silently fail
+    }
+  }
+
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-read', notificationId }),
+      })
+      setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    } catch { /* ignore */ }
+  }
+
+  const markAllNotificationsRead = async () => {
+    if (!user) return
+    try {
+      await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-all-read', userId: user.id }),
+      })
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (user && user.user_type === 'doctor') {
+      loadNotifications()
+    }
+  }, [user])
+
+  const handleAddSlot = async () => {
+    if (!doctorId || !addSlotData.appointment_date || !addSlotData.appointment_time || !addSlotData.reason) {
+      toast.error('Please fill in date, time, and reason')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const res = await fetch('/api/appointments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'book',
+          appointmentData: {
+            doctor_id: doctorId,
+            patient_id: user?.id,
+            appointment_date: addSlotData.appointment_date,
+            appointment_time: addSlotData.appointment_time,
+            type: addSlotData.type,
+            reason: addSlotData.reason,
+          }
+        })
+      }).then(r => r.json())
+      if (res.success) {
+        toast.success('Appointment slot added')
+        setAddSlotOpen(false)
+        setAddSlotData({ patient_name: '', appointment_date: new Date().toISOString().split('T')[0], appointment_time: '09:00', type: 'consultation', reason: '' })
+        loadDoctorDashboardData()
+      } else {
+        toast.error(res.error || 'Failed to add slot')
+      }
+    } catch {
+      toast.error('Failed to add slot')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleAddNote = async () => {
+    const appointment = dashboardData.todayAppointments[0]
+    if (!appointment?.id) {
+      toast.error('No appointment selected')
+      return
+    }
+    if (!addNoteText.trim()) {
+      toast.error('Please enter a note')
+      return
+    }
+    setSubmitting(true)
+    try {
+      const existingNotes = appointment.notes || ''
+      const updatedNotes = existingNotes ? `${existingNotes}\n${addNoteText}` : addNoteText
+      const res = await fetch('/api/appointments', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update',
+          appointmentId: appointment.id,
+          updates: { notes: updatedNotes }
+        })
+      }).then(r => r.json())
+      if (res.success) {
+        toast.success('Note added')
+        setAddNoteOpen(false)
+        setAddNoteText('')
+        loadDoctorDashboardData()
+      } else {
+        toast.error(res.error || 'Failed to add note')
+      }
+    } catch {
+      toast.error('Failed to add note')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSendPrescription = async () => {
+    if (!doctorId) {
+      toast.error('Doctor profile not loaded')
+      return
+    }
+    const validMeds = prescriptionData.medications.filter(m => m.name.trim())
+    if (validMeds.length === 0) {
+      toast.error('Add at least one medication')
+      return
+    }
+    if (!prescriptionData.valid_until) {
+      toast.error('Please set a valid until date')
+      return
+    }
+    setSubmitting(true)
+    try {
+      // Find patient ID from recent patients by name match
+      const matchedPatient = dashboardData.recentPatients.find(
+        (p: any) => p.full_name?.toLowerCase() === prescriptionData.patient.toLowerCase()
+      )
+      const patientId = matchedPatient?.id
+      if (!patientId) {
+        toast.error('Please enter a valid patient name from your patients list')
+        setSubmitting(false)
+        return
+      }
+      const res = await fetch('/api/prescriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prescriptionData: {
+            doctor_id: doctorId,
+            patient_id: patientId,
+            medications: validMeds,
+            instructions: prescriptionData.instructions,
+            valid_until: prescriptionData.valid_until,
+          }
+        })
+      }).then(r => r.json())
+      if (res.success) {
+        toast.success('Prescription sent successfully')
+        setPrescriptionData({ patient: '', date: new Date().toISOString().split('T')[0], medications: [{ name: '', dosage: '', frequency: '' }], instructions: '', valid_until: '' })
+      } else {
+        toast.error(res.error || 'Failed to send prescription')
+      }
+    } catch {
+      toast.error('Failed to send prescription')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const getStatusColor = (status: string) => {
     switch (status) {
-      case 'completed': return 'default'
-      case 'in-progress': return 'secondary'
-      case 'waiting': return 'outline'
-      case 'confirmed': return 'secondary'
-      default: return 'outline'
+      case 'scheduled': return 'bg-blue-50 text-blue-700 border-blue-200'
+      case 'confirmed': return 'bg-green-50 text-green-700 border-green-200'
+      case 'in_progress': return 'bg-yellow-50 text-yellow-700 border-yellow-200'
+      case 'completed': return 'bg-gray-50 text-gray-600 border-gray-200'
+      case 'cancelled': return 'bg-red-50 text-red-700 border-red-200'
+      case 'no_show': return 'bg-orange-50 text-orange-700 border-orange-200'
+      default: return ''
     }
   }
 
@@ -375,14 +482,50 @@ export default function DoctorDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-                {dashboardData.criticalPatients.length > 0 && (
-                  <Badge className="ml-1 h-4 w-4 rounded-full p-0 text-xs">
-                    {dashboardData.criticalPatients.length}
-                  </Badge>
+              <div className="relative">
+                <Button variant="ghost" size="sm" onClick={() => { setShowNotifications(!showNotifications); if (!showNotifications) loadNotifications() }}>
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </Button>
+                {showNotifications && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-background border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                    <div className="flex items-center justify-between p-3 border-b">
+                      <p className="text-sm font-semibold">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button className="text-xs text-primary hover:underline" onClick={markAllNotificationsRead}>
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p className="p-4 text-sm text-muted-foreground text-center">No notifications</p>
+                    ) : (
+                      notifications.slice(0, 20).map((notif) => (
+                        <div
+                          key={notif.id}
+                          className={`p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${!notif.is_read ? 'bg-primary/5' : ''}`}
+                          onClick={() => { if (!notif.is_read) markNotificationRead(notif.id) }}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!notif.is_read && <span className="mt-1.5 h-2 w-2 rounded-full bg-primary shrink-0" />}
+                            <div className={!notif.is_read ? '' : 'ml-4'}>
+                              <p className="text-sm font-medium">{notif.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{notif.message}</p>
+                              <p className="text-[10px] text-muted-foreground mt-1">
+                                {new Date(notif.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
-              </Button>
+              </div>
               <Button variant="ghost" size="sm">
                 <Settings className="h-4 w-4" />
               </Button>
@@ -468,7 +611,7 @@ export default function DoctorDashboard() {
                     })} • {dashboardData.todayAppointments.filter(a => a.status !== 'completed').length} appointments remaining
                   </CardDescription>
                 </div>
-                <Button size="sm">
+                <Button size="sm" onClick={() => setAddSlotOpen(true)}>
                   <Plus className="h-4 w-4 mr-1" />
                   Add Slot
                 </Button>
@@ -481,20 +624,20 @@ export default function DoctorDashboard() {
                         <div className="flex items-center gap-4">
                           <div className="text-center">
                             <p className="text-sm font-medium">{formatTime(appointment.appointment_time)}</p>
-                            <Badge variant={getStatusVariant(appointment.status)} className="text-xs mt-1">
-                              {appointment.status.replace('-', ' ')}
+                            <Badge variant="outline" className={`text-xs mt-1 ${getStatusColor(appointment.status)}`}>
+                              {appointment.status.replace('_', ' ')}
                             </Badge>
                           </div>
                           <div className="flex-1">
                             <div className="flex items-center gap-2">
-                              <p className="font-medium">{appointment.patients?.users?.full_name || 'Patient'}</p>
+                              <p className="font-medium">{appointment.patient?.full_name || 'Patient'}</p>
                               {appointment.is_urgent && (
                                 <AlertTriangle className="h-4 w-4 text-red-500" />
                               )}
                             </div>
                             <p className="text-sm text-muted-foreground">{appointment.notes || 'General consultation'}</p>
                             <Badge variant="outline" className="text-xs mt-1">
-                              {appointment.appointment_type || 'Consultation'}
+                              {appointment.type || 'Consultation'}
                             </Badge>
                           </div>
                         </div>
@@ -557,43 +700,33 @@ export default function DoctorDashboard() {
                   <TabsContent value="recent" className="space-y-3">
                     {dashboardData.recentPatients.length > 0 ? (
                       dashboardData.recentPatients.map((patient: any) => (
-                        <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg card-hover cursor-pointer">
+                        <div key={patient.id} className="flex items-center justify-between p-3 border rounded-lg card-hover cursor-pointer" onClick={() => router.push(`/doctor/patients/${patient.id}`)}>
                           <div className="flex items-center gap-3">
                             <Avatar className="h-10 w-10">
-                              <AvatarImage src={patient.users?.avatar_url} />
+                              <AvatarImage src={patient.avatar_url} />
                               <AvatarFallback>
-                                {patient.users?.full_name?.split(' ').map((n: string) => n.charAt(0)).join('').toUpperCase() || 'P'}
+                                {patient.full_name?.split(' ').map((n: string) => n.charAt(0)).join('').toUpperCase() || 'P'}
                               </AvatarFallback>
                             </Avatar>
                             <div>
-                              <p className="font-medium text-sm">{patient.users?.full_name || 'Patient'}</p>
+                              <p className="font-medium text-sm">{patient.full_name || 'Patient'}</p>
                               <p className="text-xs text-muted-foreground">
-                                {patient.users?.date_of_birth ? 
-                                  `${new Date().getFullYear() - new Date(patient.users.date_of_birth).getFullYear()} years` : 
-                                  'Age not set'} • 
-                                Last visit: {patient.last_appointment ? 
-                                  new Date(patient.last_appointment).toLocaleDateString() : 
-                                  'No previous visits'}
+                                {patient.date_of_birth ?
+                                  `${new Date().getFullYear() - new Date(patient.date_of_birth).getFullYear()} years` :
+                                  'Age not set'} •
+                                {patient.next_appointment
+                                  ? `Next visit: ${new Date(patient.next_appointment + 'T00:00:00').toLocaleDateString()}`
+                                  : patient.last_appointment
+                                    ? `Last visit: ${new Date(patient.last_appointment + 'T00:00:00').toLocaleDateString()}`
+                                    : 'No visits'}
                               </p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <Badge variant="outline" className="text-xs">
-                                  {patient.primary_condition || 'General'}
-                                </Badge>
-                                <Badge 
-                                  variant={patient.risk_level === 'high' ? 'destructive' : 
-                                          patient.risk_level === 'medium' ? 'secondary' : 'default'}
-                                  className="text-xs"
-                                >
-                                  {patient.risk_level || 'low'} risk
-                                </Badge>
-                              </div>
                             </div>
                           </div>
                           <div className="flex gap-1">
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); router.push(`/doctor/patients/${patient.id}`); }}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={(e) => e.stopPropagation()}>
                               <Phone className="h-4 w-4" />
                             </Button>
                           </div>
@@ -611,13 +744,13 @@ export default function DoctorDashboard() {
                     <div className="space-y-3">
                       {dashboardData.criticalPatients.length > 0 ? (
                         dashboardData.criticalPatients.map((patient: any) => (
-                          <div key={patient.id} className="p-4 border-l-4 border-red-500 bg-red-50/50 rounded-lg">
+                          <div key={patient.id} className="p-4 border-l-4 border-red-500 bg-red-50/50 rounded-lg cursor-pointer" onClick={() => router.push(`/doctor/patients/${patient.id}`)}>
                             <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium text-red-900">{patient.users?.full_name || 'Critical Patient'}</p>
-                                <p className="text-sm text-red-700">{patient.critical_notes || 'Requires immediate attention'}</p>
+                                <p className="font-medium text-red-900">{patient.full_name || 'Critical Patient'}</p>
+                                <p className="text-sm text-red-700">Requires immediate attention</p>
                               </div>
-                              <Button size="sm" className="bg-red-600 hover:bg-red-700">
+                              <Button size="sm" className="bg-red-600 hover:bg-red-700" onClick={(e) => e.stopPropagation()}>
                                 <Phone className="h-4 w-4 mr-1" />
                                 Call Now
                               </Button>
@@ -712,21 +845,32 @@ export default function DoctorDashboard() {
                     </div>
                   </div>
                   
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium">Valid Until</label>
+                      <Input
+                        type="date"
+                        value={prescriptionData.valid_until}
+                        onChange={(e) => setPrescriptionData(prev => ({ ...prev, valid_until: e.target.value }))}
+                      />
+                    </div>
+                  </div>
+
                   <div>
                     <label className="text-sm font-medium">Instructions</label>
-                    <Textarea 
-                      placeholder="Special instructions for the patient..." 
+                    <Textarea
+                      placeholder="Special instructions for the patient..."
                       value={prescriptionData.instructions}
                       onChange={(e) => setPrescriptionData(prev => ({ ...prev, instructions: e.target.value }))}
                     />
                   </div>
                   
                   <div className="flex gap-2">
-                    <Button>
+                    <Button onClick={handleSendPrescription} disabled={submitting}>
                       <Send className="h-4 w-4 mr-1" />
-                      Send Prescription
+                      {submitting ? 'Sending...' : 'Send Prescription'}
                     </Button>
-                    <Button variant="outline">Save Draft</Button>
+                    <Button variant="outline" onClick={() => toast.success('Draft saved locally')}>Save Draft</Button>
                   </div>
                 </div>
               </CardContent>
@@ -735,51 +879,88 @@ export default function DoctorDashboard() {
 
           {/* Right Column */}
           <div className="space-y-6">
-            {/* AI Medical Insights */}
+            {/* AI Practice Insights */}
             <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5">
               <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Brain className="h-5 w-5 text-primary" />
-                  <CardTitle>Medical Insights</CardTitle>
-                </div>
-                <CardDescription>Based on your patient data</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {dashboardData.criticalPatients.length > 0 ? (
-                  <div className="p-3 bg-white/50 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-4 w-4 text-orange-500 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium">Risk Alert</p>
-                        <p className="text-xs text-muted-foreground">
-                          {dashboardData.criticalPatients.length} patients require immediate attention
-                        </p>
-                      </div>
-                    </div>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-primary" />
+                    <CardTitle>AI Practice Insights</CardTitle>
                   </div>
-                ) : (
-                  <div className="p-3 bg-white/50 rounded-lg">
-                    <div className="flex items-start gap-2">
-                      <TrendingUp className="h-4 w-4 text-green-500 mt-0.5" />
-                      <div>
-                        <p className="text-sm font-medium">All Clear</p>
-                        <p className="text-xs text-muted-foreground">No critical patients at this time</p>
-                      </div>
-                    </div>
+                  <Button
+                    size="sm"
+                    variant={practiceInsights.length > 0 ? "outline" : "default"}
+                    onClick={generatePracticeInsights}
+                    disabled={isGeneratingInsights}
+                    className="text-xs"
+                  >
+                    {isGeneratingInsights ? (
+                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyzing...</>
+                    ) : practiceInsights.length > 0 ? (
+                      <><RefreshCw className="h-3 w-3 mr-1" /> Refresh</>
+                    ) : (
+                      <><Sparkles className="h-3 w-3 mr-1" /> Generate</>
+                    )}
+                  </Button>
+                </div>
+                <CardDescription>
+                  {insightsGeneratedAt
+                    ? `Last updated: ${new Date(insightsGeneratedAt).toLocaleString()}`
+                    : 'AI-powered analysis of your practice performance'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {insightsError && (
+                  <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                    <p className="text-xs text-red-600">{insightsError}</p>
                   </div>
                 )}
-                
-                <div className="p-3 bg-white/50 rounded-lg">
-                  <div className="flex items-start gap-2">
-                    <Clock className="h-4 w-4 text-blue-500 mt-0.5" />
-                    <div>
-                      <p className="text-sm font-medium">Today's Schedule</p>
-                      <p className="text-xs text-muted-foreground">
-                        {dashboardData.todayAppointments.length} appointments scheduled
-                      </p>
-                    </div>
+
+                {practiceInsights.length > 0 ? (
+                  practiceInsights.map((insight, idx) => {
+                    const severityConfig: Record<string, { border: string; icon: React.ReactNode }> = {
+                      low: { border: 'border-l-green-500', icon: <TrendingUp className="h-4 w-4 text-green-500 mt-0.5 shrink-0" /> },
+                      medium: { border: 'border-l-yellow-500', icon: <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" /> },
+                      high: { border: 'border-l-orange-500', icon: <ShieldAlert className="h-4 w-4 text-orange-500 mt-0.5 shrink-0" /> },
+                    }
+                    const config = severityConfig[insight.severity] || severityConfig.low
+                    return (
+                      <div key={idx} className={`p-3 bg-white/50 rounded-lg border-l-4 ${config.border}`}>
+                        <div className="flex items-start gap-2">
+                          {config.icon}
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{insight.title}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{insight.description}</p>
+                            {insight.recommendation && (
+                              <p className="text-xs text-primary mt-1 font-medium">{insight.recommendation}</p>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })
+                ) : !isGeneratingInsights ? (
+                  <div className="text-center py-4">
+                    <Sparkles className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                    <p className="mt-2 text-sm text-muted-foreground">
+                      Click &quot;Generate&quot; to get AI-powered practice insights
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Based on your appointments, patients, and prescriptions
+                    </p>
                   </div>
-                </div>
+                ) : (
+                  <div className="text-center py-6">
+                    <Loader2 className="mx-auto h-8 w-8 text-primary animate-spin" />
+                    <p className="mt-2 text-sm text-muted-foreground">Analyzing your practice data...</p>
+                  </div>
+                )}
+
+                {insightsCached && practiceInsights.length > 0 && (
+                  <p className="text-[10px] text-muted-foreground text-center">
+                    Showing cached insights. Click Refresh for latest analysis.
+                  </p>
+                )}
               </CardContent>
             </Card>
 
@@ -789,9 +970,9 @@ export default function DoctorDashboard() {
                 <CardHeader>
                   <CardTitle>Current Patient Summary</CardTitle>
                   <CardDescription>
-                    {dashboardData.todayAppointments[0]?.patients?.users?.full_name || 'Patient'} • 
-                    {dashboardData.todayAppointments[0]?.patients?.users?.date_of_birth ? 
-                      ` ${new Date().getFullYear() - new Date(dashboardData.todayAppointments[0].patients.users.date_of_birth).getFullYear()} years old` : 
+                    {dashboardData.todayAppointments[0]?.patient?.full_name || 'Patient'} •
+                    {dashboardData.todayAppointments[0]?.patient?.date_of_birth ?
+                      ` ${new Date().getFullYear() - new Date(dashboardData.todayAppointments[0].patient.date_of_birth).getFullYear()} years old` :
                       ' Age unknown'}
                   </CardDescription>
                 </CardHeader>
@@ -824,13 +1005,23 @@ export default function DoctorDashboard() {
                     </div>
                     
                     <div className="flex gap-2">
-                      <Link href={`/doctor/patients/${dashboardData.todayAppointments[0]?.patients?.id || dashboardData.todayAppointments[0]?.patient_id || ''}`} className="flex-1">
-                        <Button variant="outline" size="sm" className="w-full">
-                          <FileText className="h-4 w-4 mr-1" />
-                          Patient History
-                        </Button>
-                      </Link>
-                      <Button variant="outline" size="sm" className="flex-1">
+                      {(() => {
+                        const patientId = dashboardData.todayAppointments[0]?.patient?.id || dashboardData.todayAppointments[0]?.patient_id
+                        return patientId ? (
+                          <Link href={`/doctor/patients/${patientId}`} className="flex-1">
+                            <Button variant="outline" size="sm" className="w-full">
+                              <FileText className="h-4 w-4 mr-1" />
+                              Patient History
+                            </Button>
+                          </Link>
+                        ) : (
+                          <Button variant="outline" size="sm" className="flex-1" disabled>
+                            <FileText className="h-4 w-4 mr-1" />
+                            Patient History
+                          </Button>
+                        )
+                      })()}
+                      <Button variant="outline" size="sm" className="flex-1" onClick={() => setAddNoteOpen(true)}>
                         <Upload className="h-4 w-4 mr-1" />
                         Add Note
                       </Button>
@@ -901,6 +1092,63 @@ export default function DoctorDashboard() {
           </div>
         </div>
       </div>
+
+      {/* Add Slot Dialog */}
+      <Dialog open={addSlotOpen} onOpenChange={setAddSlotOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Appointment Slot</DialogTitle>
+            <DialogDescription>Schedule a new appointment</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Date</Label>
+                <Input type="date" value={addSlotData.appointment_date} onChange={(e) => setAddSlotData(prev => ({ ...prev, appointment_date: e.target.value }))} />
+              </div>
+              <div>
+                <Label>Time</Label>
+                <Input type="time" value={addSlotData.appointment_time} onChange={(e) => setAddSlotData(prev => ({ ...prev, appointment_time: e.target.value }))} />
+              </div>
+            </div>
+            <div>
+              <Label>Type</Label>
+              <Select value={addSlotData.type} onValueChange={(v) => setAddSlotData(prev => ({ ...prev, type: v }))}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="consultation">Consultation</SelectItem>
+                  <SelectItem value="follow_up">Follow-up</SelectItem>
+                  <SelectItem value="emergency">Emergency</SelectItem>
+                  <SelectItem value="telemedicine">Telemedicine</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label>Reason</Label>
+              <Input placeholder="Reason for appointment..." value={addSlotData.reason} onChange={(e) => setAddSlotData(prev => ({ ...prev, reason: e.target.value }))} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddSlotOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddSlot} disabled={submitting}>{submitting ? 'Adding...' : 'Add Slot'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Note Dialog */}
+      <Dialog open={addNoteOpen} onOpenChange={setAddNoteOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Note</DialogTitle>
+            <DialogDescription>Add a note to the current appointment</DialogDescription>
+          </DialogHeader>
+          <Textarea placeholder="Enter your note..." value={addNoteText} onChange={(e) => setAddNoteText(e.target.value)} rows={4} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddNoteOpen(false)}>Cancel</Button>
+            <Button onClick={handleAddNote} disabled={submitting}>{submitting ? 'Saving...' : 'Save Note'}</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

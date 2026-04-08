@@ -16,6 +16,33 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'User ID required' }, { status: 400 })
     }
 
+    const action = searchParams.get('action')
+
+    // Get health data for a specific family member
+    if (action === 'health-data' && memberId) {
+      const [memberRes, vitalsRes, appointmentsRes, insightsRes] = await Promise.all([
+        supabase.from('family_members').select('*').eq('id', memberId).eq('user_id', userId).single(),
+        supabase.from('vital_signs').select('*').eq('user_id', userId).eq('family_member_id', memberId)
+          .order('recorded_at', { ascending: false }).limit(20),
+        supabase.from('appointments').select(`
+          *, doctors:doctor_id(specialty, users:user_id(full_name)),
+          hospitals:hospital_id(name)
+        `).eq('patient_id', userId).eq('family_member_id', memberId)
+          .order('appointment_date', { ascending: false }).limit(10),
+        supabase.from('ai_insights').select('*').eq('user_id', userId).eq('family_member_id', memberId)
+          .eq('dismissed', false).order('created_at', { ascending: false }).limit(10),
+      ])
+      return NextResponse.json({
+        success: true,
+        data: {
+          member: memberRes.data,
+          vitals: vitalsRes.data || [],
+          appointments: appointmentsRes.data || [],
+          insights: insightsRes.data || [],
+        }
+      })
+    }
+
     if (memberId) {
       // Get specific family member
       const { data, error } = await supabase

@@ -82,6 +82,17 @@ export class DoctorService {
   // Search doctors
   static async searchDoctors(query?: string, specialty?: string, hospitalId?: string) {
     try {
+      // If searching by name, first find matching user IDs
+      let nameMatchUserIds: string[] | null = null
+      if (query) {
+        const { data: matchingUsers } = await supabase
+          .from('users')
+          .select('id')
+          .ilike('full_name', `%${query}%`)
+          .eq('user_type', 'doctor')
+        nameMatchUserIds = matchingUsers?.map(u => u.id) ?? []
+      }
+
       let queryBuilder = supabase
         .from('doctors')
         .select(`
@@ -91,11 +102,12 @@ export class DoctorService {
         `)
 
       if (query) {
-        queryBuilder = queryBuilder.or(`
-          users.full_name.ilike.%${query}%,
-          specialty.ilike.%${query}%,
-          bio.ilike.%${query}%
-        `)
+        // Build filter: match specialty/bio OR user_id is in name-matched users
+        const filters: string[] = [`specialty.ilike.%${query}%`, `bio.ilike.%${query}%`]
+        if (nameMatchUserIds && nameMatchUserIds.length > 0) {
+          filters.push(`user_id.in.(${nameMatchUserIds.join(',')})`)
+        }
+        queryBuilder = queryBuilder.or(filters.join(','))
       }
 
       if (specialty) {
@@ -124,7 +136,7 @@ export class DoctorService {
         .from('doctors')
         .select(`
           *,
-          users:user_id(full_name, avatar_url, phone)
+          users:user_id(full_name, email, avatar_url, phone)
         `)
         .eq('hospital_id', hospitalId)
         .order('specialty')

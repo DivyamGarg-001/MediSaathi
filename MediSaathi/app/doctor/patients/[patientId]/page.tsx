@@ -25,6 +25,12 @@ import {
   RefreshCw,
   Download,
   Heart,
+  Brain,
+  Sparkles,
+  Loader2,
+  ShieldAlert,
+  MessageSquare,
+  Stethoscope,
 } from 'lucide-react'
 
 type TimelineItem = {
@@ -56,6 +62,12 @@ export default function PatientHistoryPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState('all')
+
+  // AI Patient Summary state
+  const [aiSummary, setAiSummary] = useState<any>(null)
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
+  const [summaryError, setSummaryError] = useState('')
+  const [showSummary, setShowSummary] = useState(false)
 
   // Resolve doctor ID from user ID
   useEffect(() => {
@@ -108,6 +120,30 @@ export default function PatientHistoryPage() {
   useEffect(() => {
     if (doctorId) loadTimeline()
   }, [doctorId, patientId])
+
+  const generatePatientSummary = async () => {
+    if (!doctorId || !patientId || isGeneratingSummary) return
+    setIsGeneratingSummary(true)
+    setSummaryError('')
+    try {
+      const res = await fetch('/api/ai/doctor/patient-summary/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doctor_id: doctorId, patient_id: patientId })
+      }).then(r => r.json())
+
+      if (res.success) {
+        setAiSummary(res)
+        setShowSummary(true)
+      } else {
+        setSummaryError(res.error || 'Failed to generate patient summary')
+      }
+    } catch {
+      setSummaryError('AI service unavailable. Make sure the FastAPI backend is running.')
+    } finally {
+      setIsGeneratingSummary(false)
+    }
+  }
 
   const getAge = (dob: string | null) => {
     if (!dob) return 'N/A'
@@ -198,6 +234,149 @@ export default function PatientHistoryPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* AI Patient Briefing */}
+          <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Brain className="h-5 w-5 text-primary" />
+                  <CardTitle>AI Patient Briefing</CardTitle>
+                </div>
+                <Button
+                  size="sm"
+                  variant={aiSummary ? "outline" : "default"}
+                  onClick={generatePatientSummary}
+                  disabled={isGeneratingSummary || !doctorId}
+                  className="text-xs"
+                >
+                  {isGeneratingSummary ? (
+                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyzing...</>
+                  ) : aiSummary ? (
+                    <><RefreshCw className="h-3 w-3 mr-1" /> Regenerate</>
+                  ) : (
+                    <><Sparkles className="h-3 w-3 mr-1" /> Generate Briefing</>
+                  )}
+                </Button>
+              </div>
+              <CardDescription>
+                {aiSummary
+                  ? `Generated: ${new Date(aiSummary.generated_at).toLocaleString()}`
+                  : 'AI-powered clinical summary before consultation'}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {summaryError && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-lg">
+                  <p className="text-xs text-red-600">{summaryError}</p>
+                </div>
+              )}
+
+              {isGeneratingSummary && (
+                <div className="text-center py-6">
+                  <Loader2 className="mx-auto h-8 w-8 text-primary animate-spin" />
+                  <p className="mt-2 text-sm text-muted-foreground">Analyzing patient data...</p>
+                </div>
+              )}
+
+              {aiSummary && showSummary && !isGeneratingSummary && (
+                <div className="space-y-4">
+                  {/* Summary */}
+                  <div className="p-3 bg-blue-50 rounded-lg">
+                    <p className="text-sm font-medium text-blue-900">Overview</p>
+                    <p className="text-sm text-blue-800 mt-1">{aiSummary.summary}</p>
+                  </div>
+
+                  {/* Risk Factors */}
+                  {aiSummary.risk_factors?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-red-700 mb-1 flex items-center gap-1">
+                        <ShieldAlert className="h-3 w-3" /> Risk Factors
+                      </p>
+                      <div className="space-y-1">
+                        {aiSummary.risk_factors.map((risk: string, i: number) => (
+                          <div key={i} className="p-2 bg-red-50 rounded text-xs text-red-700 border-l-2 border-red-400">
+                            {risk}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Key Observations */}
+                  {aiSummary.key_observations?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                        <Stethoscope className="h-3 w-3" /> Key Observations
+                      </p>
+                      <div className="space-y-1">
+                        {aiSummary.key_observations.map((obs: any, i: number) => {
+                          const priorityColors: Record<string, string> = {
+                            high: 'border-l-orange-500 bg-orange-50',
+                            medium: 'border-l-yellow-500 bg-yellow-50',
+                            low: 'border-l-green-500 bg-green-50',
+                          }
+                          return (
+                            <div key={i} className={`p-2 rounded text-xs border-l-2 ${priorityColors[obs.priority] || priorityColors.low}`}>
+                              <span className="font-medium capitalize">[{obs.area}]</span> {obs.observation}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Medication Notes */}
+                  {aiSummary.medication_notes && (
+                    <div className="p-2 bg-purple-50 rounded-lg">
+                      <p className="text-xs font-semibold text-purple-700 flex items-center gap-1">
+                        <Pill className="h-3 w-3" /> Medication Notes
+                      </p>
+                      <p className="text-xs text-purple-700 mt-1">{aiSummary.medication_notes}</p>
+                    </div>
+                  )}
+
+                  {/* Suggested Questions */}
+                  {aiSummary.suggested_questions?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-semibold text-gray-700 mb-1 flex items-center gap-1">
+                        <MessageSquare className="h-3 w-3" /> Suggested Questions
+                      </p>
+                      <ul className="space-y-1">
+                        {aiSummary.suggested_questions.map((q: string, i: number) => (
+                          <li key={i} className="text-xs text-gray-600 pl-3 relative before:absolute before:left-0 before:content-['•'] before:text-primary">
+                            {q}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  {/* Follow-up Recommendations */}
+                  {aiSummary.follow_up_recommendations?.length > 0 && (
+                    <div className="p-2 bg-green-50 rounded-lg">
+                      <p className="text-xs font-semibold text-green-700 mb-1">Follow-up Recommendations</p>
+                      {aiSummary.follow_up_recommendations.map((rec: string, i: number) => (
+                        <p key={i} className="text-xs text-green-700">{rec}</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!aiSummary && !isGeneratingSummary && (
+                <div className="text-center py-4">
+                  <Brain className="mx-auto h-8 w-8 text-muted-foreground/50" />
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    Click &quot;Generate Briefing&quot; for an AI-powered patient summary
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Includes risk factors, observations, medication notes, and suggested questions
+                  </p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           {/* Timeline */}
           <Tabs value={activeTab} onValueChange={setActiveTab}>

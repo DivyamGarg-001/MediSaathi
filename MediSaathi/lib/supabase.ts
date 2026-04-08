@@ -297,6 +297,7 @@ export type Database = {
           patient_id: string
           doctor_id: string
           hospital_id: string | null
+          family_member_id: string | null
           appointment_date: string
           appointment_time: string
           duration: number
@@ -318,6 +319,7 @@ export type Database = {
           patient_id: string
           doctor_id: string
           hospital_id?: string | null
+          family_member_id?: string | null
           appointment_date: string
           appointment_time: string
           duration?: number
@@ -339,6 +341,7 @@ export type Database = {
           patient_id?: string
           doctor_id?: string
           hospital_id?: string | null
+          family_member_id?: string | null
           appointment_date?: string
           appointment_time?: string
           duration?: number

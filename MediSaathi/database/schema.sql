@@ -111,6 +111,7 @@ CREATE TABLE public.appointments (
   patient_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   doctor_id UUID REFERENCES public.doctors(id) ON DELETE CASCADE,
   hospital_id UUID REFERENCES public.hospitals(id),
+  family_member_id UUID REFERENCES public.family_members(id) ON DELETE SET NULL,
   appointment_date DATE NOT NULL,
   appointment_time TIME NOT NULL,
   duration INTEGER DEFAULT 30,
@@ -163,7 +164,7 @@ CREATE TABLE public.ai_insights (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
   user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
   family_member_id UUID REFERENCES public.family_members(id) ON DELETE CASCADE,
-  insight_type TEXT CHECK (insight_type IN ('risk_prediction', 'health_trend', 'medication_reminder', 'checkup_due')) NOT NULL,
+  insight_type TEXT CHECK (insight_type IN ('risk_prediction', 'health_trend', 'medication_reminder', 'checkup_due', 'patient_flow', 'scheduling', 'clinical_pattern', 'efficiency', 'growth', 'bed_utilization', 'department_performance', 'doctor_workload', 'appointment_efficiency', 'revenue_trend')) NOT NULL,
   title TEXT NOT NULL,
   description TEXT NOT NULL,
   severity TEXT CHECK (severity IN ('low', 'medium', 'high', 'critical')) DEFAULT 'medium',
@@ -171,6 +172,18 @@ CREATE TABLE public.ai_insights (
   dismissed BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   expires_at TIMESTAMP WITH TIME ZONE
+);
+
+-- Notifications table
+CREATE TABLE public.notifications (
+  id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
+  user_id UUID REFERENCES public.users(id) ON DELETE CASCADE,
+  type TEXT CHECK (type IN ('appointment_cancelled', 'appointment_rescheduled', 'appointment_booked', 'prescription_created', 'general')) NOT NULL,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  related_appointment_id UUID REFERENCES public.appointments(id) ON DELETE SET NULL,
+  is_read BOOLEAN DEFAULT FALSE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
 -- Create indexes for better performance
@@ -189,6 +202,8 @@ CREATE INDEX idx_prescriptions_patient_id ON public.prescriptions(patient_id);
 CREATE INDEX idx_prescriptions_doctor_id ON public.prescriptions(doctor_id);
 CREATE INDEX idx_health_wallet_user_id ON public.health_wallet(user_id);
 CREATE INDEX idx_ai_insights_user_id ON public.ai_insights(user_id);
+CREATE INDEX idx_notifications_user_id ON public.notifications(user_id);
+CREATE INDEX idx_notifications_is_read ON public.notifications(is_read);
 
 -- Add foreign key constraint for doctors.hospital_id after hospitals table is created
 ALTER TABLE public.doctors ADD CONSTRAINT fk_doctors_hospital 
@@ -209,6 +224,7 @@ ALTER TABLE public.appointments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.prescriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.health_wallet ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.ai_insights ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
 -- Create RLS policies
 -- Users can only access their own data

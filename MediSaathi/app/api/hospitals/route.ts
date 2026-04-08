@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { HospitalService } from '@/lib/services/hospital.service'
+import { DoctorService } from '@/lib/services/doctor.service'
 
 export async function GET(request: NextRequest) {
   try {
@@ -180,7 +181,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const body = await request.json()
-    const { action, hospitalId, updates, availableBeds, services, doctorId, schedule, settings } = body
+    const { action, hospitalId, updates, availableBeds, services, doctorId, schedule, settings, doctorUpdates } = body
 
     if (!hospitalId) {
       return NextResponse.json({ success: false, error: 'Hospital ID required' }, { status: 400 })
@@ -243,6 +244,26 @@ export async function PUT(request: NextRequest) {
           success: true,
           data: scheduleResult.data,
           message: 'Doctor schedule updated successfully',
+        })
+
+      case 'update-doctor-profile':
+        if (!doctorId || !doctorUpdates || typeof doctorUpdates !== 'object') {
+          return NextResponse.json({ success: false, error: 'doctorId and doctorUpdates required' }, { status: 400 })
+        }
+
+        // Verify doctor belongs to this hospital
+        const docCheck = await DoctorService.getDoctor(doctorId)
+        if (docCheck.error || docCheck.data?.hospital_id !== hospitalId) {
+          return NextResponse.json({ success: false, error: 'Doctor not found in this hospital' }, { status: 404 })
+        }
+
+        const docUpdateResult = await DoctorService.updateDoctor(doctorId, doctorUpdates)
+        if (docUpdateResult.error) throw docUpdateResult.error
+
+        return NextResponse.json({
+          success: true,
+          data: docUpdateResult.data,
+          message: 'Doctor profile updated successfully',
         })
 
       case 'update-settings':

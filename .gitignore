@@ -50,6 +50,11 @@ Thumbs.db
 # Deployment
 .vercel
 
+# Python
+**/venv/
+**/__pycache__/
+*.pyc
+
 # Misc
 *.bak
 
