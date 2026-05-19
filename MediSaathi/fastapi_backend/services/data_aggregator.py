@@ -4,6 +4,59 @@ from datetime import datetime, timedelta
 from fastapi_backend.services.supabase_client import get_supabase
 
 
+async def reconcile_appointment_statuses(patient_id: str) -> None:
+    """Best-effort fix-up of stale appointment statuses for a patient.
+
+    For appointments where appointment_date < today AND status IN ('scheduled', 'confirmed'):
+      - If at least one prescription exists with this appointment_id → mark 'completed'
+      - Else if appointment_date < today - 7 days → mark 'no_show'
+      - Else (recent past, no prescription yet) → leave as-is (grace period)
+
+    Idempotent. Skips if no rows match. Errors are swallowed so AI generation never fails
+    because of reconciliation.
+    """
+    sb = get_supabase()
+    try:
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+        seven_days_ago_str = (datetime.utcnow() - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        past_resp = (
+            sb.table("appointments")
+            .select("id, appointment_date")
+            .eq("patient_id", patient_id)
+            .in_("status", ["scheduled", "confirmed"])
+            .lt("appointment_date", today_str)
+            .execute()
+        )
+        past_appts = past_resp.data or []
+        if not past_appts:
+            return
+
+        appt_ids = [a["id"] for a in past_appts]
+
+        rx_resp = (
+            sb.table("prescriptions")
+            .select("appointment_id")
+            .in_("appointment_id", appt_ids)
+            .execute()
+        )
+        appt_ids_with_rx = {r["appointment_id"] for r in (rx_resp.data or []) if r.get("appointment_id")}
+
+        to_complete = [a["id"] for a in past_appts if a["id"] in appt_ids_with_rx]
+        to_no_show = [
+            a["id"] for a in past_appts
+            if a["id"] not in appt_ids_with_rx and a["appointment_date"] < seven_days_ago_str
+        ]
+
+        if to_complete:
+            sb.table("appointments").update({"status": "completed"}).in_("id", to_complete).execute()
+        if to_no_show:
+            sb.table("appointments").update({"status": "no_show"}).in_("id", to_no_show).execute()
+    except Exception:
+        # Reconciliation is best-effort; never block AI generation
+        pass
+
+
 async def get_patient_data(user_id: str) -> dict:
     """Aggregate all relevant patient data for AI insight generation.
 
@@ -15,6 +68,9 @@ async def get_patient_data(user_id: str) -> dict:
       - health_records: recent records
       - wallet: spending summary
     """
+    # Fix up stale 'scheduled'/'confirmed' rows whose date has passed
+    await reconcile_appointment_statuses(user_id)
+
     sb = get_supabase()
     thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
 
@@ -22,11 +78,12 @@ async def get_patient_data(user_id: str) -> dict:
     user_resp = sb.table("users").select("id, full_name, date_of_birth, gender, phone").eq("id", user_id).single().execute()
     user = user_resp.data if user_resp.data else {}
 
-    # --- Vital signs (last 30 days, latest 20) ---
+    # --- Vital signs (last 30 days, latest 20) — patient's own only, not family ---
     vitals_resp = (
         sb.table("vital_signs")
         .select("type, value, unit, recorded_at")
         .eq("user_id", user_id)
+        .is_("family_member_id", "null")
         .gte("recorded_at", thirty_days_ago)
         .order("recorded_at", desc=True)
         .limit(20)
@@ -34,12 +91,13 @@ async def get_patient_data(user_id: str) -> dict:
     )
     vitals = vitals_resp.data or []
 
-    # --- Appointments (last 90 days + upcoming) ---
+    # --- Appointments (last 90 days + upcoming) — patient's own only, not family ---
     ninety_days_ago = (datetime.utcnow() - timedelta(days=90)).isoformat()
     appt_resp = (
         sb.table("appointments")
         .select("appointment_date, appointment_time, type, status, notes, doctors:doctor_id(specialty, users:user_id(full_name))")
         .eq("patient_id", user_id)
+        .is_("family_member_id", "null")
         .gte("appointment_date", ninety_days_ago[:10])
         .order("appointment_date", desc=True)
         .limit(15)
@@ -61,11 +119,12 @@ async def get_patient_data(user_id: str) -> dict:
     )
     prescriptions = rx_resp.data or []
 
-    # --- Recent health records ---
+    # --- Recent health records — patient's own only, not family ---
     records_resp = (
         sb.table("health_records")
         .select("title, type, date_recorded, ai_summary, is_critical")
         .eq("user_id", user_id)
+        .is_("family_member_id", "null")
         .order("date_recorded", desc=True)
         .limit(10)
         .execute()
@@ -101,6 +160,10 @@ async def get_family_member_data(user_id: str, family_member_id: str) -> dict:
     Fetches member profile, vitals, appointments, and health records
     filtered by family_member_id. Prescriptions/wallet excluded (no FK).
     """
+    # Status reconciliation runs on the patient_id (account holder); it covers
+    # appointments for both self and dependents.
+    await reconcile_appointment_statuses(user_id)
+
     sb = get_supabase()
     thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
     ninety_days_ago = (datetime.utcnow() - timedelta(days=90)).isoformat()
@@ -163,25 +226,50 @@ async def get_family_member_data(user_id: str, family_member_id: str) -> dict:
     }
 
 
-async def get_doctor_patient_data(doctor_id: str, patient_id: str) -> dict:
+async def get_doctor_patient_data(doctor_id: str, patient_id: str, family_member_id: str | None = None) -> dict:
     """Aggregate a specific patient's data for doctor's AI patient briefing.
 
     Uses doctor_id (from doctors table, NOT user_id) and patient_id (user_id of the patient).
+
+    When family_member_id is provided, fetches the family member's data instead of
+    the patient's own. The patient (account holder) remains the booking entity.
     """
+    await reconcile_appointment_statuses(patient_id)
+
     sb = get_supabase()
     thirty_days_ago = (datetime.utcnow() - timedelta(days=30)).isoformat()
     ninety_days_ago = (datetime.utcnow() - timedelta(days=90)).isoformat()
     today = datetime.utcnow().strftime("%Y-%m-%d")
 
-    # --- Patient profile ---
+    # --- Patient profile (account holder) ---
     user_resp = sb.table("users").select("id, full_name, date_of_birth, gender, phone").eq("id", patient_id).single().execute()
     patient = user_resp.data if user_resp.data else {}
 
+    # --- Family member profile (if briefing is for a family member) ---
+    family_member: dict = {}
+    if family_member_id:
+        fm_resp = (
+            sb.table("family_members")
+            .select("id, full_name, relationship, date_of_birth, gender, phone")
+            .eq("id", family_member_id)
+            .eq("user_id", patient_id)
+            .single()
+            .execute()
+        )
+        family_member = fm_resp.data if fm_resp.data else {}
+
+    def apply_member_filter(query):
+        if family_member_id:
+            return query.eq("family_member_id", family_member_id)
+        return query.is_("family_member_id", "null")
+
     # --- Vital signs (last 30 days) ---
     vitals_resp = (
-        sb.table("vital_signs")
-        .select("type, value, unit, recorded_at, notes")
-        .eq("user_id", patient_id)
+        apply_member_filter(
+            sb.table("vital_signs")
+            .select("type, value, unit, recorded_at, notes")
+            .eq("user_id", patient_id)
+        )
         .gte("recorded_at", thirty_days_ago)
         .order("recorded_at", desc=True)
         .limit(20)
@@ -192,10 +280,12 @@ async def get_doctor_patient_data(doctor_id: str, patient_id: str) -> dict:
     # --- Appointments with THIS doctor (last 6 months) ---
     six_months_ago = (datetime.utcnow() - timedelta(days=180)).isoformat()
     appt_resp = (
-        sb.table("appointments")
-        .select("appointment_date, appointment_time, type, status, notes, reason, actual_start_time, actual_end_time")
-        .eq("patient_id", patient_id)
-        .eq("doctor_id", doctor_id)
+        apply_member_filter(
+            sb.table("appointments")
+            .select("appointment_date, appointment_time, type, status, notes, reason, actual_start_time, actual_end_time")
+            .eq("patient_id", patient_id)
+            .eq("doctor_id", doctor_id)
+        )
         .gte("appointment_date", six_months_ago[:10])
         .order("appointment_date", desc=True)
         .limit(20)
@@ -205,10 +295,12 @@ async def get_doctor_patient_data(doctor_id: str, patient_id: str) -> dict:
 
     # --- Appointments with OTHER doctors (last 90 days) ---
     other_appt_resp = (
-        sb.table("appointments")
-        .select("appointment_date, type, status, doctors:doctor_id(specialty, users:user_id(full_name))")
-        .eq("patient_id", patient_id)
-        .neq("doctor_id", doctor_id)
+        apply_member_filter(
+            sb.table("appointments")
+            .select("appointment_date, type, status, doctors:doctor_id(specialty, users:user_id(full_name))")
+            .eq("patient_id", patient_id)
+            .neq("doctor_id", doctor_id)
+        )
         .gte("appointment_date", ninety_days_ago[:10])
         .order("appointment_date", desc=True)
         .limit(10)
@@ -243,9 +335,11 @@ async def get_doctor_patient_data(doctor_id: str, patient_id: str) -> dict:
 
     # --- Health records ---
     records_resp = (
-        sb.table("health_records")
-        .select("title, type, date_recorded, ai_summary, is_critical, content")
-        .eq("user_id", patient_id)
+        apply_member_filter(
+            sb.table("health_records")
+            .select("title, type, date_recorded, ai_summary, is_critical, content")
+            .eq("user_id", patient_id)
+        )
         .order("date_recorded", desc=True)
         .limit(15)
         .execute()
@@ -254,6 +348,7 @@ async def get_doctor_patient_data(doctor_id: str, patient_id: str) -> dict:
 
     return {
         "patient": patient,
+        "family_member": family_member,
         "vitals": vitals,
         "doctor_appointments": doctor_appointments,
         "other_appointments": other_appointments,

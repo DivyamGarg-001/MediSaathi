@@ -2,10 +2,11 @@
 
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
-import { Activity, Menu, X, LogOut, LayoutDashboard } from "lucide-react"
+import { Activity, Menu, X, LogOut, LayoutDashboard, Settings } from "lucide-react"
 import { useState, useEffect } from "react"
 import { useAuth } from "@/contexts/auth-context"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { UserMenu } from "@/components/user-menu"
 
 export function SiteHeader() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
@@ -24,6 +25,10 @@ export function SiteHeader() {
   }
 
   const dashboardPath = user ? `/${user.user_type}/dashboard` : '/dashboard'
+  const settingsPath =
+    user && (user.user_type === 'patient' || user.user_type === 'doctor')
+      ? `/${user.user_type}/settings`
+      : null
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
@@ -83,16 +88,7 @@ export function SiteHeader() {
                   Dashboard
                 </Link>
               </Button>
-              <div className="flex items-center gap-2">
-                <Avatar className="size-8">
-                  <AvatarImage src={user.avatar_url} />
-                  <AvatarFallback className="text-xs">{getUserInitials()}</AvatarFallback>
-                </Avatar>
-                <span className="text-sm font-medium max-w-[120px] truncate">{user.full_name}</span>
-              </div>
-              <Button variant="ghost" size="sm" onClick={logout}>
-                <LogOut className="size-4" />
-              </Button>
+              <UserMenu />
             </>
           ) : (
             <>
@@ -166,6 +162,14 @@ export function SiteHeader() {
                       Dashboard
                     </Link>
                   </Button>
+                  {settingsPath && (
+                    <Button variant="ghost" asChild>
+                      <Link href={settingsPath} className="flex items-center gap-2">
+                        <Settings className="size-4" />
+                        Settings
+                      </Link>
+                    </Button>
+                  )}
                   <Button variant="ghost" onClick={logout} className="flex items-center gap-2">
                     <LogOut className="size-4" />
                     Logout

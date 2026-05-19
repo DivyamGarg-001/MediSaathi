@@ -107,67 +107,80 @@ async function ensureHospitalProfile(
 export async function PUT(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.email) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Unauthorized - No valid session' 
-      }, { status: 401 })
-    }
-
     const body = await request.json()
-    const { user_type, full_name, specialty, license_number } = body
-
-    if (!user_type) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'User type is required' 
-      }, { status: 400 })
-    }
-
-    // First check if user exists
-    const { data: existingUser, error: fetchError } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('email', session.user.email)
-      .single()
-
-    if (fetchError || !existingUser) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'User not found in database' 
-      }, { status: 404 })
-    }
-
-    // Update user profile
-    const updateData: any = {
+    const {
       user_type,
-      updated_at: new Date().toISOString()
+      full_name,
+      specialty,
+      license_number,
+      phone,
+      date_of_birth,
+      gender,
+      address,
+      avatar_url,
+      userId: bodyUserId,
+    } = body
+
+    // Resolve user: prefer NextAuth session (Google OAuth), fall back to body userId (email/password users)
+    let existingUser: any = null
+    if (session?.user?.email) {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('email', session.user.email)
+        .single()
+      if (error || !data) {
+        return NextResponse.json({ success: false, error: 'User not found in database' }, { status: 404 })
+      }
+      existingUser = data
+    } else if (bodyUserId) {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('id', bodyUserId)
+        .single()
+      if (error || !data) {
+        return NextResponse.json({ success: false, error: 'User not found in database' }, { status: 404 })
+      }
+      existingUser = data
+    } else {
+      return NextResponse.json({ success: false, error: 'Unauthorized - No valid session' }, { status: 401 })
     }
 
-    if (full_name) updateData.full_name = full_name
+    // Build partial update — only include fields that were sent
+    const updateData: any = {}
+    if (user_type !== undefined) updateData.user_type = user_type
+    if (full_name !== undefined) updateData.full_name = full_name
+    if (phone !== undefined) updateData.phone = phone
+    if (date_of_birth !== undefined) updateData.date_of_birth = date_of_birth || null
+    if (gender !== undefined) updateData.gender = gender || null
+    if (address !== undefined) updateData.address = address
+    if (avatar_url !== undefined) updateData.avatar_url = avatar_url
+
+    if (Object.keys(updateData).length === 0) {
+      return NextResponse.json({ success: false, error: 'No fields to update' }, { status: 400 })
+    }
 
     const { data, error } = await supabaseAdmin
       .from('users')
       .update(updateData)
-      .eq('email', session.user.email)
+      .eq('id', existingUser.id)
       .select()
       .single()
 
     if (error) {
       console.error('Profile update error:', error)
-      return NextResponse.json({ 
-        success: false, 
+      return NextResponse.json({
+        success: false,
         error: 'Failed to update profile',
-        details: error.message
+        details: error.message,
       }, { status: 500 })
     }
 
-    // Ensure role-specific profile exists for selected user type
+    // Ensure role-specific profile only when user_type was explicitly set (existing updateUserType flow)
     if (user_type === 'doctor') {
       await ensureDoctorProfile(existingUser.id, specialty, license_number)
     }
-
     if (user_type === 'hospital') {
       await ensureHospitalProfile(
         existingUser.id,
@@ -181,10 +194,10 @@ export async function PUT(request: NextRequest) {
     return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error('API Error:', error)
-    return NextResponse.json({ 
-      success: false, 
+    return NextResponse.json({
+      success: false,
       error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     }, { status: 500 })
   }
 }
@@ -192,37 +205,36 @@ export async function PUT(request: NextRequest) {
 export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.email) {
-      return NextResponse.json({ 
-        success: false, 
-        error: 'Unauthorized - No valid session' 
-      }, { status: 401 })
+    const { searchParams } = new URL(request.url)
+    const queryUserId = searchParams.get('userId')
+
+    let query = supabaseAdmin.from('users').select('*')
+    if (session?.user?.email) {
+      query = query.eq('email', session.user.email)
+    } else if (queryUserId) {
+      query = query.eq('id', queryUserId)
+    } else {
+      return NextResponse.json({ success: false, error: 'Unauthorized - No valid session' }, { status: 401 })
     }
 
-    // Get user profile
-    const { data, error } = await supabaseAdmin
-      .from('users')
-      .select('*')
-      .eq('email', session.user.email)
-      .single()
+    const { data, error } = await query.single()
 
     if (error) {
       console.error('Profile fetch error:', error)
-      return NextResponse.json({ 
-        success: false, 
+      return NextResponse.json({
+        success: false,
         error: 'Failed to fetch profile',
-        details: error.message
+        details: error.message,
       }, { status: 500 })
     }
 
     return NextResponse.json({ success: true, data })
   } catch (error) {
     console.error('API Error:', error)
-    return NextResponse.json({ 
-      success: false, 
+    return NextResponse.json({
+      success: false,
       error: 'Internal server error',
-      details: error instanceof Error ? error.message : 'Unknown error'
+      details: error instanceof Error ? error.message : 'Unknown error',
     }, { status: 500 })
   }
 }

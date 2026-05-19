@@ -37,9 +37,10 @@ export async function GET(request: NextRequest) {
           return NextResponse.json({ success: false, error: 'Vital type required for analytics' }, { status: 400 })
         }
         const analyticsResult = await VitalSignService.getVitalAnalytics(
-          userId, 
-          type, 
-          days ? parseInt(days) : 30
+          userId,
+          type,
+          days ? parseInt(days) : 30,
+          familyMemberId || undefined
         )
         if (analyticsResult.error) throw analyticsResult.error
         return NextResponse.json({ success: true, data: analyticsResult.data })

@@ -25,6 +25,8 @@ export async function GET(request: NextRequest) {
         status,
         reason,
         is_urgent,
+        family_member_id,
+        family_members:family_member_id (id, full_name, relationship),
         patient:patient_id (
           id,
           full_name,
@@ -72,6 +74,8 @@ export async function GET(request: NextRequest) {
           next_appointment: isFuture ? apptDate : null,
           last_status: appointment.status,
           is_urgent: appointment.is_urgent,
+          // Map of family_member_id -> { id, full_name, relationship } for de-duped chips
+          family_members_seen: {} as Record<string, { id: string; full_name: string; relationship: string }>,
         })
       } else {
         // Track nearest upcoming appointment
@@ -84,6 +88,18 @@ export async function GET(request: NextRequest) {
         }
         if (appointment.is_urgent) existing.is_urgent = true
       }
+
+      // Aggregate which family members this patient has appointments for
+      const patientEntry = patientsMap.get(appointment.patient_id)
+      if (appointment.family_member_id && appointment.family_members) {
+        patientEntry.family_members_seen[appointment.family_member_id] = appointment.family_members
+      }
+    })
+
+    // Flatten the family_members_seen map into a list before returning
+    patientsMap.forEach((entry) => {
+      entry.family_members = Object.values(entry.family_members_seen)
+      delete entry.family_members_seen
     })
 
     let patients = Array.from(patientsMap.values())

@@ -115,18 +115,25 @@ export class VitalSignService {
   }
 
   // Get vital signs analytics
-  static async getVitalAnalytics(userId: string, type: string, days: number = 30) {
+  static async getVitalAnalytics(userId: string, type: string, days: number = 30, familyMemberId?: string) {
     try {
       const startDate = new Date()
       startDate.setDate(startDate.getDate() - days)
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('vital_signs')
         .select('*')
         .eq('user_id', userId)
         .eq('type', type)
         .gte('recorded_at', startDate.toISOString())
-        .order('recorded_at', { ascending: true })
+
+      if (familyMemberId) {
+        query = query.eq('family_member_id', familyMemberId)
+      } else {
+        query = query.is('family_member_id', null)
+      }
+
+      const { data, error } = await query.order('recorded_at', { ascending: true })
 
       if (error) throw error
 

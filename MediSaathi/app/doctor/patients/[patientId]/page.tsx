@@ -10,6 +10,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { HealthRecordViewerSheet, type HealthRecord } from '@/components/health-record-viewer'
 import {
   ArrowLeft,
   Calendar,
@@ -68,6 +70,10 @@ export default function PatientHistoryPage() {
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false)
   const [summaryError, setSummaryError] = useState('')
   const [showSummary, setShowSummary] = useState(false)
+  const [familyMembers, setFamilyMembers] = useState<Array<{ id: string; full_name: string; relationship: string }>>([])
+  const [briefingTarget, setBriefingTarget] = useState<string>('self') // 'self' or family_member_id
+  const [subjectFilter, setSubjectFilter] = useState<string>('all') // 'all' | 'self' | family_member_id
+  const [openRecord, setOpenRecord] = useState<HealthRecord | null>(null)
 
   // Resolve doctor ID from user ID
   useEffect(() => {
@@ -121,6 +127,24 @@ export default function PatientHistoryPage() {
     if (doctorId) loadTimeline()
   }, [doctorId, patientId])
 
+  // Load this patient's family members so the doctor can scope the briefing to one
+  useEffect(() => {
+    if (!patientId) return
+    fetch(`/api/family-members?userId=${patientId}`)
+      .then(res => res.json())
+      .then(result => {
+        if (result.success) setFamilyMembers(result.data || [])
+      })
+      .catch(() => { /* non-critical */ })
+  }, [patientId])
+
+  // Reset stale summary when the target changes — the briefing on screen no longer applies
+  useEffect(() => {
+    setAiSummary(null)
+    setShowSummary(false)
+    setSummaryError('')
+  }, [briefingTarget])
+
   const generatePatientSummary = async () => {
     if (!doctorId || !patientId || isGeneratingSummary) return
     setIsGeneratingSummary(true)
@@ -129,7 +153,11 @@ export default function PatientHistoryPage() {
       const res = await fetch('/api/ai/doctor/patient-summary/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ doctor_id: doctorId, patient_id: patientId })
+        body: JSON.stringify({
+          doctor_id: doctorId,
+          patient_id: patientId,
+          family_member_id: briefingTarget !== 'self' ? briefingTarget : null,
+        })
       }).then(r => r.json())
 
       if (res.success) {
@@ -174,7 +202,34 @@ export default function PatientHistoryPage() {
     return <Badge className={`text-xs ${variants[status] || ''}`}>{status}</Badge>
   }
 
-  const filtered = activeTab === 'all' ? timeline : timeline.filter(i => i.type === activeTab)
+  // Subject filter applies to appointments / records / vitals (prescriptions don't have family_member_id, so they always pass)
+  const passesSubject = (item: TimelineItem): boolean => {
+    if (subjectFilter === 'all') return true
+    if (item.type === 'prescription') return subjectFilter === 'self'
+    const fmId = item.data?.family_member_id || null
+    if (subjectFilter === 'self') return fmId === null
+    return fmId === subjectFilter
+  }
+  const tabFiltered = activeTab === 'all' ? timeline : timeline.filter(i => i.type === activeTab)
+  const filtered = tabFiltered.filter(passesSubject)
+
+  // Render-helper: a small label on each item showing who it's for
+  const subjectBadge = (item: TimelineItem) => {
+    if (item.type === 'prescription') return null
+    const fm = item.data?.family_members
+    if (fm) {
+      return (
+        <Badge variant="secondary" className="text-[10px] font-normal">
+          For: {fm.full_name} ({fm.relationship})
+        </Badge>
+      )
+    }
+    return (
+      <Badge variant="outline" className="text-[10px] font-normal">
+        Self ({profile?.full_name || 'Patient'})
+      </Badge>
+    )
+  }
 
   return (
     <ProtectedRoute allowedUserTypes={['doctor']}>
@@ -238,30 +293,49 @@ export default function PatientHistoryPage() {
           {/* AI Patient Briefing */}
           <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-secondary/5">
             <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between gap-2 flex-wrap">
                 <div className="flex items-center gap-2">
                   <Brain className="h-5 w-5 text-primary" />
                   <CardTitle>AI Patient Briefing</CardTitle>
                 </div>
-                <Button
-                  size="sm"
-                  variant={aiSummary ? "outline" : "default"}
-                  onClick={generatePatientSummary}
-                  disabled={isGeneratingSummary || !doctorId}
-                  className="text-xs"
-                >
-                  {isGeneratingSummary ? (
-                    <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyzing...</>
-                  ) : aiSummary ? (
-                    <><RefreshCw className="h-3 w-3 mr-1" /> Regenerate</>
-                  ) : (
-                    <><Sparkles className="h-3 w-3 mr-1" /> Generate Briefing</>
+                <div className="flex items-center gap-2">
+                  {familyMembers.length > 0 && (
+                    <Select value={briefingTarget} onValueChange={setBriefingTarget}>
+                      <SelectTrigger className="h-8 w-[180px] text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="self">{profile?.full_name || 'Patient'} (account holder)</SelectItem>
+                        {familyMembers.map((fm) => (
+                          <SelectItem key={fm.id} value={fm.id}>
+                            {fm.full_name} ({fm.relationship})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
-                </Button>
+                  <Button
+                    size="sm"
+                    variant={aiSummary ? "outline" : "default"}
+                    onClick={generatePatientSummary}
+                    disabled={isGeneratingSummary || !doctorId}
+                    className="text-xs"
+                  >
+                    {isGeneratingSummary ? (
+                      <><Loader2 className="h-3 w-3 mr-1 animate-spin" /> Analyzing...</>
+                    ) : aiSummary ? (
+                      <><RefreshCw className="h-3 w-3 mr-1" /> Regenerate</>
+                    ) : (
+                      <><Sparkles className="h-3 w-3 mr-1" /> Generate Briefing</>
+                    )}
+                  </Button>
+                </div>
               </div>
               <CardDescription>
                 {aiSummary
                   ? `Generated: ${new Date(aiSummary.generated_at).toLocaleString()}`
+                  : briefingTarget !== 'self'
+                  ? `AI-powered clinical summary for ${familyMembers.find(fm => fm.id === briefingTarget)?.full_name || 'family member'}`
                   : 'AI-powered clinical summary before consultation'}
               </CardDescription>
             </CardHeader>
@@ -379,6 +453,31 @@ export default function PatientHistoryPage() {
           </Card>
 
           {/* Timeline */}
+          {familyMembers.length > 0 && (
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-sm text-muted-foreground">Showing data for:</span>
+              <Select value={subjectFilter} onValueChange={setSubjectFilter}>
+                <SelectTrigger className="h-8 w-[220px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Everyone (account holder + family)</SelectItem>
+                  <SelectItem value="self">{profile?.full_name || 'Patient'} (account holder)</SelectItem>
+                  {familyMembers.map(fm => (
+                    <SelectItem key={fm.id} value={fm.id}>
+                      {fm.full_name} ({fm.relationship})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {subjectFilter !== 'all' && (
+                <span className="text-xs text-muted-foreground">
+                  Prescriptions are account-level and only show under "{profile?.full_name || 'self'}"
+                </span>
+              )}
+            </div>
+          )}
+
           <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="all">All ({timeline.length})</TabsTrigger>
@@ -425,6 +524,7 @@ export default function PatientHistoryPage() {
                                   <span className="font-medium text-sm">{item.data.type} appointment</span>
                                   {getStatusBadge(item.data.status)}
                                   {item.data.is_urgent && <Badge variant="destructive" className="text-xs">Urgent</Badge>}
+                                  {subjectBadge(item)}
                                 </div>
                                 <p className="text-sm text-muted-foreground mt-1">Reason: {item.data.reason}</p>
                                 {item.data.notes && <p className="text-xs text-muted-foreground">Notes: {item.data.notes}</p>}
@@ -467,12 +567,17 @@ export default function PatientHistoryPage() {
                                   <span className="font-medium text-sm">{item.data.title}</span>
                                   <Badge variant="outline" className="text-xs">{item.data.type}</Badge>
                                   {item.data.is_critical && <Badge variant="destructive" className="text-xs">Critical</Badge>}
+                                  {subjectBadge(item)}
                                 </div>
                                 {item.data.ai_summary && <p className="text-sm text-muted-foreground mt-1">{item.data.ai_summary}</p>}
                                 {item.data.file_url && (
-                                  <a href={item.data.file_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-primary mt-1">
-                                    <Download className="h-3 w-3" /> View File
-                                  </a>
+                                  <button
+                                    type="button"
+                                    onClick={() => setOpenRecord(item.data as HealthRecord)}
+                                    className="inline-flex items-center gap-1 text-xs text-primary mt-1 hover:underline"
+                                  >
+                                    <FileText className="h-3 w-3" /> View File
+                                  </button>
                                 )}
                               </>
                             )}
@@ -480,8 +585,9 @@ export default function PatientHistoryPage() {
                             {/* Vital Sign */}
                             {item.type === 'vital' && (
                               <>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <span className="font-medium text-sm">{item.data.type?.replace(/_/g, ' ')}</span>
+                                  {subjectBadge(item)}
                                   <Badge variant="outline" className="text-xs font-mono">
                                     {item.data.value} {item.data.unit}
                                   </Badge>
@@ -505,6 +611,12 @@ export default function PatientHistoryPage() {
           </Tabs>
         </div>
       </div>
+
+      {/* Read-only viewer for patient health records (no delete option for doctors) */}
+      <HealthRecordViewerSheet
+        record={openRecord}
+        onClose={() => setOpenRecord(null)}
+      />
     </ProtectedRoute>
   )
 }

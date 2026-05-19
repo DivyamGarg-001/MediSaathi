@@ -30,6 +30,7 @@ import {
   FileBarChart,
   Pencil,
 } from 'lucide-react'
+import { normalizePhone } from '@/lib/utils/phone'
 
 type HospitalProfile = {
   id: string
@@ -294,6 +295,16 @@ export default function HospitalDashboardPage() {
     event.preventDefault()
     if (!hospital) return
 
+    let normalizedDoctorPhone: string | undefined
+    if (doctorForm.phone.trim()) {
+      const result = normalizePhone(doctorForm.phone)
+      if (!result) {
+        setMessage('Enter a valid Indian mobile number (10 digits, starts with 6/7/8/9)')
+        return
+      }
+      normalizedDoctorPhone = result
+    }
+
     setBusy(true)
     setMessage('')
     try {
@@ -306,7 +317,7 @@ export default function HospitalDashboardPage() {
           doctorData: {
             fullName: doctorForm.fullName,
             email: doctorForm.email,
-            phone: doctorForm.phone || undefined,
+            phone: normalizedDoctorPhone,
             password: doctorForm.password,
             specialty: doctorForm.specialty,
             licenseNumber: doctorForm.licenseNumber,
@@ -520,6 +531,12 @@ export default function HospitalDashboardPage() {
     event.preventDefault()
     if (!hospital) return
 
+    const normalizedHospitalPhone = normalizePhone(settingsForm.phone)
+    if (!normalizedHospitalPhone) {
+      setMessage('Enter a valid Indian mobile number (10 digits, starts with 6/7/8/9)')
+      return
+    }
+
     setBusy(true)
     setMessage('')
     try {
@@ -532,7 +549,7 @@ export default function HospitalDashboardPage() {
           settings: {
             name: settingsForm.name,
             address: settingsForm.address,
-            phone: settingsForm.phone,
+            phone: normalizedHospitalPhone,
             email: settingsForm.email,
             website: settingsForm.website || null,
             totalBeds: Number(settingsForm.totalBeds),
@@ -653,9 +670,12 @@ export default function HospitalDashboardPage() {
                         <Label htmlFor='doctorPhone'>Phone</Label>
                         <Input
                           id='doctorPhone'
+                          type='tel'
                           value={doctorForm.phone}
                           onChange={(event) => setDoctorForm((prev) => ({ ...prev, phone: event.target.value }))}
+                          placeholder='9876543210'
                         />
+                        <p className='text-xs text-muted-foreground'>10-digit Indian mobile. +91 is optional and added on save.</p>
                       </div>
                     </div>
 
@@ -1131,9 +1151,12 @@ export default function HospitalDashboardPage() {
                       <Label htmlFor='hospitalPhone'>Phone</Label>
                       <Input
                         id='hospitalPhone'
+                        type='tel'
                         value={settingsForm.phone}
                         onChange={(event) => setSettingsForm((prev) => ({ ...prev, phone: event.target.value }))}
+                        placeholder='9876543210'
                       />
+                      <p className='text-xs text-muted-foreground'>10-digit Indian mobile. +91 is optional and added on save.</p>
                     </div>
                     <div className='space-y-1'>
                       <Label htmlFor='hospitalEmail'>Email</Label>

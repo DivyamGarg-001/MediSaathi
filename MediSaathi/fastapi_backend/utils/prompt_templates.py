@@ -32,14 +32,19 @@ Insight types:
 
 PATIENT_INSIGHT_USER = """Here is the patient's health data. Analyze it and generate personalized health insights.
 
+TODAY'S DATE: {today_date}
+
 PATIENT PROFILE:
 {user_profile}
 
 RECENT VITAL SIGNS (last 30 days):
 {vitals}
 
-APPOINTMENTS (last 90 days):
-{appointments}
+PAST APPOINTMENTS (already happened — last 90 days):
+{past_appointments}
+
+UPCOMING APPOINTMENTS (today and later):
+{upcoming_appointments}
 
 ACTIVE PRESCRIPTIONS:
 {prescriptions}
@@ -50,7 +55,8 @@ RECENT HEALTH RECORDS:
 MEDICAL SPENDING (last 3 months):
 {wallet}
 
-Generate health insights based on this data. Remember: respond with ONLY a valid JSON array."""
+Generate health insights based on this data. Remember: respond with ONLY a valid JSON array.
+Treat appointments under PAST APPOINTMENTS as historical, regardless of their status field — they have already occurred. Only mention "upcoming" appointments if they appear under UPCOMING APPOINTMENTS."""
 
 
 # --- Doctor templates (Phase 3) ---
@@ -87,17 +93,25 @@ Response format:
 
 DOCTOR_PATIENT_SUMMARY_USER = """Generate a clinical patient briefing for the doctor.
 
+TODAY'S DATE: {today_date}
+
 PATIENT PROFILE:
 {patient_profile}
 
 VITAL SIGNS (last 30 days):
 {vitals}
 
-APPOINTMENTS WITH YOU (last 6 months):
-{doctor_appointments}
+PAST APPOINTMENTS WITH YOU (already happened — last 6 months):
+{past_doctor_appointments}
 
-APPOINTMENTS WITH OTHER DOCTORS (last 90 days):
-{other_appointments}
+UPCOMING APPOINTMENTS WITH YOU:
+{upcoming_doctor_appointments}
+
+PAST APPOINTMENTS WITH OTHER DOCTORS (already happened — last 90 days):
+{past_other_appointments}
+
+UPCOMING APPOINTMENTS WITH OTHER DOCTORS:
+{upcoming_other_appointments}
 
 YOUR PRESCRIPTIONS FOR THIS PATIENT:
 {doctor_prescriptions}
@@ -108,7 +122,8 @@ ALL ACTIVE PRESCRIPTIONS (from all doctors):
 HEALTH RECORDS:
 {health_records}
 
-Generate a structured patient briefing. Remember: respond with ONLY valid JSON."""
+Generate a structured patient briefing. Remember: respond with ONLY valid JSON.
+Treat anything under PAST APPOINTMENTS as historical — they have already occurred."""
 
 
 DOCTOR_PRACTICE_SYSTEM = """You are a practice analytics AI for MediSaathi, a healthcare management platform.

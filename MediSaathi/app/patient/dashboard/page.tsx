@@ -47,6 +47,9 @@ import {
   XCircle,
 } from "lucide-react"
 import Link from "next/link"
+import { normalizePhone } from "@/lib/utils/phone"
+import { toast } from "sonner"
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, Legend } from "recharts"
 
 interface DashboardData {
   healthRecords: any[]
@@ -84,9 +87,13 @@ export default function PatientDashboard() {
     loading: true
   })
   const [walletSummary, setWalletSummary] = useState<WalletSummary | null>(null)
+  const [notifications, setNotifications] = useState<any[]>([])
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [showNotifications, setShowNotifications] = useState(false)
   const [selectedVital, setSelectedVital] = useState('blood_pressure')
   const [vitalValue, setVitalValue] = useState('')
   const [isAddingVital, setIsAddingVital] = useState(false)
+  const [vitalAnalytics, setVitalAnalytics] = useState<Record<string, { readings: any[]; average: number; min: number; max: number; trend: 'up' | 'down' | 'stable' }>>({})
 
   // Add Family Member state
   const [isAddFamilyModalOpen, setIsAddFamilyModalOpen] = useState(false)
@@ -106,6 +113,7 @@ export default function PatientDashboard() {
     title: '',
     type: 'lab_report',
     date_recorded: new Date().toISOString().slice(0, 10),
+    family_member_id: 'self',
     file: null as File | null
   })
 
@@ -164,42 +172,120 @@ export default function PatientDashboard() {
     }
   }, [user])
 
+  useEffect(() => {
+    if (user) {
+      const memberId = vitalsForMember && vitalsForMember !== 'self' ? vitalsForMember : undefined
+      loadVitalsData(memberId)
+    }
+  }, [user, vitalsForMember])
+
+  // Notifications
+  const loadNotifications = async () => {
+    if (!user) return
+    try {
+      const [notifRes, countRes] = await Promise.all([
+        fetch(`/api/notifications?userId=${user.id}`).then(r => r.json()),
+        fetch(`/api/notifications?userId=${user.id}&action=unread-count`).then(r => r.json()),
+      ])
+      setNotifications(notifRes.data || [])
+      setUnreadCount(countRes.data || 0)
+    } catch {
+      // Silently fail
+    }
+  }
+
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-read', notificationId }),
+      })
+      setNotifications(prev => prev.map(n => n.id === notificationId ? { ...n, is_read: true } : n))
+      setUnreadCount(prev => Math.max(0, prev - 1))
+    } catch { /* ignore */ }
+  }
+
+  const markAllNotificationsRead = async () => {
+    if (!user) return
+    try {
+      await fetch('/api/notifications', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'mark-all-read', userId: user.id }),
+      })
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })))
+      setUnreadCount(0)
+    } catch { /* ignore */ }
+  }
+
+  useEffect(() => {
+    if (user && user.user_type === 'patient') {
+      loadNotifications()
+    }
+  }, [user])
+
   const loadDashboardData = async () => {
     if (!user) return
-    
+
     try {
       const [
         recordsResult,
         appointmentsResult,
-        vitalsResult,
         familyResult,
         walletSummaryResult
       ] = await Promise.all([
         fetch(`/api/health-records?action=get-records&userId=${user.id}`).then(res => res.json()),
         fetch(`/api/appointments?action=upcoming&userId=${user.id}&userType=patient`).then(res => res.json()),
-        fetch(`/api/vital-signs?action=latest-readings&userId=${user.id}`).then(res => res.json()),
         fetch(`/api/family-members?userId=${user.id}`).then(res => res.json()),
         fetch(`/api/health-wallet?action=get-summary&userId=${user.id}&months=1`).then(res => res.json())
       ])
 
-      setDashboardData({
+      setDashboardData(prev => ({
+        ...prev,
         healthRecords: recordsResult.data || [],
         upcomingAppointments: appointmentsResult.data || [],
-        latestVitals: vitalsResult.data || [],
         familyMembers: familyResult.data || [],
         loading: false
-      })
+      }))
       setWalletSummary(walletSummaryResult?.success ? walletSummaryResult.data : null)
     } catch (error) {
       console.error('Error loading dashboard data:', error)
-      setDashboardData({
+      setDashboardData(prev => ({
+        ...prev,
         healthRecords: [],
         upcomingAppointments: [],
-        latestVitals: [],
         familyMembers: [],
         loading: false
-      })
+      }))
       setWalletSummary(null)
+    }
+  }
+
+  const VITAL_TYPES_TRACKED = ['blood_pressure', 'heart_rate', 'weight', 'temperature']
+
+  const loadVitalsData = async (memberId?: string) => {
+    if (!user) return
+    const memberQuery = memberId ? `&familyMemberId=${memberId}` : ''
+    try {
+      const [latestRes, ...analyticsResults] = await Promise.all([
+        fetch(`/api/vital-signs?action=latest-readings&userId=${user.id}${memberQuery}`).then(r => r.json()),
+        ...VITAL_TYPES_TRACKED.map(type =>
+          fetch(`/api/vital-signs?action=analytics&userId=${user.id}&type=${type}&days=30${memberQuery}`).then(r => r.json())
+        )
+      ])
+
+      setDashboardData(prev => ({ ...prev, latestVitals: latestRes?.data || [] }))
+
+      const analyticsByType: Record<string, any> = {}
+      VITAL_TYPES_TRACKED.forEach((type, i) => {
+        if (analyticsResults[i]?.success && analyticsResults[i].data) {
+          analyticsByType[type] = analyticsResults[i].data
+        }
+      })
+      setVitalAnalytics(analyticsByType)
+    } catch (error) {
+      console.error('Error loading vitals data:', error)
     }
   }
 
@@ -452,11 +538,20 @@ export default function PatientDashboard() {
       
       if (result.success) {
         setVitalValue('')
-        await loadDashboardData() // Refresh data
-        
+        const memberId = vitalsForMember && vitalsForMember !== 'self' ? vitalsForMember : undefined
+        await loadVitalsData(memberId)
+
+        toast.success('Reading logged')
+
         if (result.abnormal?.isAbnormal) {
-          const severityLabel = result.abnormal.severity === 'high' ? '🔴 URGENT' : result.abnormal.severity === 'medium' ? '🟡 Warning' : '🟢 Notice'
-          alert(`${severityLabel}: ${result.abnormal.message}`)
+          const message = result.abnormal.message || 'Abnormal reading detected'
+          if (result.abnormal.severity === 'high') {
+            toast.error(message, { duration: 8000 })
+          } else if (result.abnormal.severity === 'medium') {
+            toast.warning(message, { duration: 6000 })
+          } else {
+            toast.message(message)
+          }
         }
       }
     } catch (error) {
@@ -468,6 +563,15 @@ export default function PatientDashboard() {
 
   const addFamilyMember = async () => {
     if (!familyMemberForm.name.trim() || !familyMemberForm.relationship || !familyMemberForm.date_of_birth || !familyMemberForm.gender || !user) return
+
+    let normalizedPhone: string | null = null
+    if (familyMemberForm.phone.trim()) {
+      normalizedPhone = normalizePhone(familyMemberForm.phone)
+      if (!normalizedPhone) {
+        alert('Enter a valid Indian mobile number (10 digits, starts with 6/7/8/9)')
+        return
+      }
+    }
 
     setIsAddingFamily(true)
     try {
@@ -481,7 +585,7 @@ export default function PatientDashboard() {
             relationship: familyMemberForm.relationship,
             date_of_birth: familyMemberForm.date_of_birth,
             gender: familyMemberForm.gender,
-            phone: familyMemberForm.phone.trim() || null,
+            phone: normalizedPhone,
             emergency_contact: familyMemberForm.emergency_contact
           }
         })
@@ -521,6 +625,9 @@ export default function PatientDashboard() {
       formData.append('title', recordUploadForm.title.trim())
       formData.append('type', recordUploadForm.type)
       formData.append('date_recorded', recordUploadForm.date_recorded)
+      if (recordUploadForm.family_member_id && recordUploadForm.family_member_id !== 'self') {
+        formData.append('family_member_id', recordUploadForm.family_member_id)
+      }
       formData.append('file', recordUploadForm.file)
 
       const response = await fetch('/api/health-records', {
@@ -533,18 +640,50 @@ export default function PatientDashboard() {
         throw new Error(result.error || 'Failed to upload health record')
       }
 
+      const uploadedRecord = result.data
+      const isPdf = uploadedRecord?.file_type === 'application/pdf'
+
       setRecordUploadForm({
         title: '',
         type: 'lab_report',
         date_recorded: new Date().toISOString().slice(0, 10),
+        family_member_id: 'self',
         file: null
       })
       setIsUploadModalOpen(false)
       await loadDashboardData()
-      alert('Health record uploaded successfully')
+
+      if (isPdf && uploadedRecord?.id) {
+        toast.success('Record uploaded — analyzing with AI...')
+        // Fire-and-forget AI analysis. The /patient/health-records page will show the
+        // summary/tags/critical flag once it completes (typically 3-6 sec).
+        fetch('/api/ai/records/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ record_id: uploadedRecord.id }),
+        })
+          .then(r => r.json())
+          .then(analyzeRes => {
+            if (analyzeRes?.success) {
+              const criticalCount = analyzeRes.critical_findings?.length || 0
+              if (criticalCount > 0) {
+                toast.warning(`AI analysis done — ${criticalCount} critical finding${criticalCount > 1 ? 's' : ''} flagged`, { duration: 7000 })
+              } else {
+                toast.success('AI analysis complete')
+              }
+            } else if (analyzeRes?.skipped) {
+              // PDF-only feature; image/other file types skip silently
+            } else {
+              toast.error(analyzeRes?.error || 'AI analysis failed')
+            }
+          })
+          .catch(() => toast.error('AI service unavailable. Make sure the FastAPI backend is running.'))
+      } else {
+        toast.success('Health record uploaded')
+      }
     } catch (error) {
       console.error('Error uploading health record:', error)
-      alert(error instanceof Error ? error.message : 'Failed to upload health record. Please try again.')
+      toast.error(error instanceof Error ? error.message : 'Failed to upload health record')
     } finally {
       setIsUploadingRecord(false)
     }
@@ -685,16 +824,58 @@ export default function PatientDashboard() {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <Button variant="ghost" size="sm">
-                <Bell className="h-4 w-4" />
-                {dashboardData.upcomingAppointments.length > 0 && (
-                  <Badge className="ml-1 h-4 w-4 rounded-full p-0 text-xs">
-                    {dashboardData.upcomingAppointments.length}
-                  </Badge>
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => { setShowNotifications(!showNotifications); if (!showNotifications) loadNotifications() }}
+                >
+                  <Bell className="h-4 w-4" />
+                  {unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-white text-[10px] flex items-center justify-center">
+                      {unreadCount > 9 ? '9+' : unreadCount}
+                    </span>
+                  )}
+                </Button>
+                {showNotifications && (
+                  <div className="absolute right-0 top-full mt-2 w-80 bg-background border rounded-lg shadow-lg z-50 max-h-96 overflow-y-auto">
+                    <div className="flex items-center justify-between p-3 border-b">
+                      <p className="text-sm font-semibold">Notifications</p>
+                      {unreadCount > 0 && (
+                        <button className="text-xs text-primary hover:underline" onClick={markAllNotificationsRead}>
+                          Mark all read
+                        </button>
+                      )}
+                    </div>
+                    {notifications.length === 0 ? (
+                      <p className="p-4 text-sm text-muted-foreground text-center">No notifications</p>
+                    ) : (
+                      notifications.slice(0, 20).map((notif) => (
+                        <div
+                          key={notif.id}
+                          className={`p-3 border-b last:border-b-0 cursor-pointer hover:bg-muted/50 ${!notif.is_read ? 'bg-primary/5' : ''}`}
+                          onClick={() => { if (!notif.is_read) markNotificationRead(notif.id) }}
+                        >
+                          <div className="flex items-start gap-2">
+                            {!notif.is_read && <span className="mt-1.5 h-2 w-2 rounded-full bg-primary shrink-0" />}
+                            <div className={!notif.is_read ? '' : 'ml-4'}>
+                              <p className="text-sm font-medium">{notif.title}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{notif.message}</p>
+                              <p className="text-[10px] text-muted-foreground mt-1">
+                                {new Date(notif.created_at).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 )}
-              </Button>
-              <Button variant="ghost" size="sm" onClick={logout}>
-                <Settings className="h-4 w-4" />
+              </div>
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/patient/settings">
+                  <Settings className="h-4 w-4" />
+                </Link>
               </Button>
             </div>
           </div>
@@ -849,8 +1030,9 @@ export default function PatientDashboard() {
                             type="tel"
                             value={familyMemberForm.phone}
                             onChange={(e) => setFamilyMemberForm(prev => ({ ...prev, phone: e.target.value }))}
-                            placeholder="Enter phone number"
+                            placeholder="9876543210"
                           />
+                          <p className="text-xs text-muted-foreground">10-digit Indian mobile. +91 is optional and added on save.</p>
                         </div>
                         <div className="flex items-center gap-2">
                           <Input
@@ -987,6 +1169,7 @@ export default function PatientDashboard() {
                           </p>
                         </div>
                       </div>
+                      <VitalTrendChart type="blood_pressure" analytics={vitalAnalytics['blood_pressure']} />
                     </TabsContent>
 
                     <TabsContent value="heart-rate">
@@ -1026,6 +1209,7 @@ export default function PatientDashboard() {
                           <p className="text-xl font-bold">{getLatestVitalValue('heart_rate')}</p>
                           <p className="text-xs text-muted-foreground">{getLatestVitalDate('heart_rate')}</p>
                         </div>
+                        <VitalTrendChart type="heart_rate" analytics={vitalAnalytics['heart_rate']} />
                       </div>
                     </TabsContent>
 
@@ -1066,6 +1250,7 @@ export default function PatientDashboard() {
                           <p className="text-xl font-bold">{getLatestVitalValue('weight')}</p>
                           <p className="text-xs text-muted-foreground">{getLatestVitalDate('weight')}</p>
                         </div>
+                        <VitalTrendChart type="weight" analytics={vitalAnalytics['weight']} />
                       </div>
                     </TabsContent>
 
@@ -1106,6 +1291,7 @@ export default function PatientDashboard() {
                           <p className="text-xl font-bold">{getLatestVitalValue('temperature')}</p>
                           <p className="text-xs text-muted-foreground">{getLatestVitalDate('temperature')}</p>
                         </div>
+                        <VitalTrendChart type="temperature" analytics={vitalAnalytics['temperature']} />
                       </div>
                     </TabsContent>
                   </Tabs>
@@ -1119,6 +1305,10 @@ export default function PatientDashboard() {
                     <CardTitle>Recent Health Records</CardTitle>
                     <CardDescription>Your latest medical documents</CardDescription>
                   </div>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" asChild>
+                      <Link href="/patient/health-records">View all</Link>
+                    </Button>
                   <Dialog open={isUploadModalOpen} onOpenChange={setIsUploadModalOpen}>
                     <DialogTrigger asChild>
                       <Button size="sm">
@@ -1130,7 +1320,7 @@ export default function PatientDashboard() {
                       <DialogHeader>
                         <DialogTitle>Upload Health Record</DialogTitle>
                         <DialogDescription>
-                          Upload PDF, image, or Word documents to your secure health records.
+                          Upload PDF or image (PNG, JPG, JPEG). Max 10 MB.
                         </DialogDescription>
                       </DialogHeader>
                       <div className="grid gap-4 py-2">
@@ -1174,19 +1364,41 @@ export default function PatientDashboard() {
                           />
                         </div>
 
+                        {dashboardData.familyMembers.length > 0 && (
+                          <div className="grid gap-2">
+                            <Label htmlFor="record-for">Uploading for</Label>
+                            <Select
+                              value={recordUploadForm.family_member_id}
+                              onValueChange={(value) => setRecordUploadForm(prev => ({ ...prev, family_member_id: value }))}
+                            >
+                              <SelectTrigger id="record-for">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="self">Myself</SelectItem>
+                                {dashboardData.familyMembers.map((fm: any) => (
+                                  <SelectItem key={fm.id} value={fm.id}>
+                                    {fm.full_name} ({fm.relationship})
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+
                         <div className="grid gap-2">
                           <Label htmlFor="record-file">File *</Label>
                           <Input
                             id="record-file"
                             type="file"
-                            accept=".pdf,.png,.jpg,.jpeg,.webp,.doc,.docx"
+                            accept=".pdf,.png,.jpg,.jpeg"
                             onChange={(e) => {
                               const selectedFile = e.target.files?.[0] || null
                               setRecordUploadForm(prev => ({ ...prev, file: selectedFile }))
                             }}
                           />
                           <p className="text-xs text-muted-foreground">
-                            Allowed: PDF, PNG, JPG, WEBP, DOC, DOCX (max 10MB)
+                            Allowed: PDF, PNG, JPG, JPEG (max 10MB)
                           </p>
                         </div>
                       </div>
@@ -1212,6 +1424,7 @@ export default function PatientDashboard() {
                       </div>
                     </DialogContent>
                   </Dialog>
+                  </div>
                 </CardHeader>
                 <CardContent>
                   {dashboardData.healthRecords.length > 0 ? (
@@ -1905,6 +2118,124 @@ export default function PatientDashboard() {
           )}
         </SheetContent>
       </Sheet>
+    </div>
+  )
+}
+
+type VitalAnalyticsData = {
+  readings: any[]
+  average: number
+  min: number
+  max: number
+  trend: 'up' | 'down' | 'stable'
+}
+
+function VitalTrendChart({ type, analytics }: { type: string; analytics?: VitalAnalyticsData }) {
+  const readings = analytics?.readings || []
+
+  if (readings.length < 2) {
+    return (
+      <div className="rounded-lg border bg-muted/30 p-6 text-center">
+        <p className="text-sm text-muted-foreground">Log at least 2 readings in the last 30 days to see a trend.</p>
+        {readings.length === 1 && (
+          <p className="text-xs text-muted-foreground mt-1">You have 1 reading so far.</p>
+        )}
+      </div>
+    )
+  }
+
+  const formatDate = (iso: string) => {
+    const d = new Date(iso)
+    return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+  }
+
+  if (type === 'blood_pressure') {
+    const chartData = readings
+      .map(r => {
+        const [sys, dia] = String(r.value).split('/').map((v: string) => parseFloat(v))
+        return { date: formatDate(r.recorded_at), systolic: sys, diastolic: dia, recorded_at: r.recorded_at }
+      })
+      .filter(d => !isNaN(d.systolic) && !isNaN(d.diastolic))
+
+    const sysValues = chartData.map(d => d.systolic)
+    const diaValues = chartData.map(d => d.diastolic)
+    const sysAvg = sysValues.reduce((a, b) => a + b, 0) / sysValues.length
+    const diaAvg = diaValues.reduce((a, b) => a + b, 0) / diaValues.length
+
+    return (
+      <div className="space-y-3">
+        <div className="rounded-lg border bg-background p-3">
+          <p className="text-xs text-muted-foreground mb-2">Last 30 days</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+              <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+              <Tooltip />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Line type="monotone" dataKey="systolic" stroke="#ef4444" strokeWidth={2} dot={{ r: 3 }} />
+              <Line type="monotone" dataKey="diastolic" stroke="#3b82f6" strokeWidth={2} dot={{ r: 3 }} />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="rounded-md bg-muted/40 px-3 py-2">
+            <p className="text-muted-foreground">Avg</p>
+            <p className="font-semibold">{Math.round(sysAvg)}/{Math.round(diaAvg)}</p>
+          </div>
+          <div className="rounded-md bg-muted/40 px-3 py-2">
+            <p className="text-muted-foreground">Min</p>
+            <p className="font-semibold">{Math.min(...sysValues)}/{Math.min(...diaValues)}</p>
+          </div>
+          <div className="rounded-md bg-muted/40 px-3 py-2">
+            <p className="text-muted-foreground">Max</p>
+            <p className="font-semibold">{Math.max(...sysValues)}/{Math.max(...diaValues)}</p>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const chartData = readings
+    .map(r => ({ date: formatDate(r.recorded_at), value: parseFloat(r.value), recorded_at: r.recorded_at }))
+    .filter(d => !isNaN(d.value))
+
+  const colors: Record<string, string> = {
+    heart_rate: '#ef4444',
+    weight: '#3b82f6',
+    temperature: '#f59e0b',
+  }
+  const stroke = colors[type] || '#10b981'
+  const unit = chartData.length > 0 ? (readings[0]?.unit || '') : ''
+
+  return (
+    <div className="space-y-3">
+      <div className="rounded-lg border bg-background p-3">
+        <p className="text-xs text-muted-foreground mb-2">Last 30 days</p>
+        <ResponsiveContainer width="100%" height={180}>
+          <LineChart data={chartData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+            <XAxis dataKey="date" tick={{ fontSize: 11 }} />
+            <YAxis tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
+            <Tooltip />
+            <Line type="monotone" dataKey="value" stroke={stroke} strokeWidth={2} dot={{ r: 3 }} />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs">
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <p className="text-muted-foreground">Avg</p>
+          <p className="font-semibold">{analytics?.average ? `${analytics.average.toFixed(1)} ${unit}` : '—'}</p>
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <p className="text-muted-foreground">Min</p>
+          <p className="font-semibold">{analytics ? `${analytics.min} ${unit}` : '—'}</p>
+        </div>
+        <div className="rounded-md bg-muted/40 px-3 py-2">
+          <p className="text-muted-foreground">Max</p>
+          <p className="font-semibold">{analytics ? `${analytics.max} ${unit}` : '—'}</p>
+        </div>
+      </div>
     </div>
   )
 }

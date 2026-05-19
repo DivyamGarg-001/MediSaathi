@@ -16,9 +16,6 @@ const ALLOWED_FILE_TYPES = new Set([
   'image/png',
   'image/jpeg',
   'image/jpg',
-  'image/webp',
-  'application/msword',
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
 ])
 
 const MAX_UPLOAD_SIZE_BYTES = 10 * 1024 * 1024
@@ -47,39 +44,67 @@ export async function GET(request: NextRequest) {
               type,
               date_recorded,
               created_at,
-              file_url
+              file_url,
+              file_type,
+              ai_summary,
+              tags,
+              is_critical,
+              family_member_id,
+              content,
+              family_members:family_member_id(id, full_name, relationship)
             `)
             .eq('user_id', userId)
             .order('date_recorded', { ascending: false })
-            .limit(50)
+            .limit(200)
 
           if (error) {
             console.error('Database error:', error)
-            return NextResponse.json({ 
-              success: false, 
+            return NextResponse.json({
+              success: false,
               error: 'Failed to fetch health records',
               details: error.message
             }, { status: 500 })
           }
 
-          return NextResponse.json({ 
-            success: true, 
-            data: records || [] 
+          return NextResponse.json({
+            success: true,
+            data: records || []
           })
 
         } catch (dbError) {
           console.error('Database connection error:', dbError)
-          return NextResponse.json({ 
-            success: false, 
+          return NextResponse.json({
+            success: false,
             error: 'Database connection failed',
             details: dbError instanceof Error ? dbError.message : 'Unknown error'
           }, { status: 500 })
         }
 
+      case 'get-record': {
+        const recordId = searchParams.get('recordId')
+        if (!recordId) {
+          return NextResponse.json({ success: false, error: 'recordId required' }, { status: 400 })
+        }
+        const { data: record, error } = await supabase
+          .from('health_records')
+          .select(`
+            *,
+            family_members:family_member_id(id, full_name, relationship)
+          `)
+          .eq('id', recordId)
+          .eq('user_id', userId)
+          .single()
+
+        if (error) {
+          return NextResponse.json({ success: false, error: error.message }, { status: 500 })
+        }
+        return NextResponse.json({ success: true, data: record })
+      }
+
       default:
-        return NextResponse.json({ 
-          success: false, 
-          error: 'Invalid action' 
+        return NextResponse.json({
+          success: false,
+          error: 'Invalid action'
         }, { status: 400 })
     }
 
@@ -125,7 +150,7 @@ export async function POST(request: NextRequest) {
       if (!ALLOWED_FILE_TYPES.has(file.type)) {
         return NextResponse.json({
           success: false,
-          error: 'Unsupported file type. Allowed: PDF, images, DOC, DOCX'
+          error: 'Unsupported file type. Allowed: PDF, PNG, JPG/JPEG'
         }, { status: 400 })
       }
 
@@ -145,13 +170,7 @@ export async function POST(request: NextRequest) {
         ? 'pdf'
         : file.type.includes('png')
           ? 'png'
-          : file.type.includes('jpeg') || file.type.includes('jpg')
-            ? 'jpg'
-            : file.type.includes('webp')
-              ? 'webp'
-              : file.type === 'application/msword'
-                ? 'doc'
-                : 'docx'
+          : 'jpg'
 
       const fileExt = extension || fallbackExt
       const safeBaseName = file.name
@@ -299,12 +318,29 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'Record ID required' }, { status: 400 })
     }
 
+    // Fetch file_url before deleting the row so we can clean up storage
+    const { data: existing } = await supabase
+      .from('health_records')
+      .select('file_url')
+      .eq('id', recordId)
+      .single()
+
     const { error } = await HealthRecordService.deleteHealthRecord(recordId)
     if (error) throw error
 
-    return NextResponse.json({ 
-      success: true, 
-      message: 'Health record deleted successfully' 
+    // Best-effort storage cleanup — extract path inside the patient_records bucket
+    if (existing?.file_url) {
+      const marker = '/patient_records/'
+      const idx = existing.file_url.indexOf(marker)
+      if (idx !== -1) {
+        const storagePath = existing.file_url.slice(idx + marker.length)
+        await supabase.storage.from('patient_records').remove([storagePath])
+      }
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: 'Health record deleted successfully'
     })
   } catch (error) {
     console.error('Health Record Delete Error:', error)

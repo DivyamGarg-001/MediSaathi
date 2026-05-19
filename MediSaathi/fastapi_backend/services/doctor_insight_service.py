@@ -23,14 +23,30 @@ from fastapi_backend.utils.prompt_templates import (
 def _format_patient_summary_prompt(data: dict) -> str:
     """Build user prompt from aggregated patient data for doctor briefing."""
     patient = data.get("patient", {})
+    family_member = data.get("family_member") or {}
+
+    # When briefing is for a family member, the subject of the briefing IS the family
+    # member. The account holder ("patient") is mentioned only as their guardian/contact.
+    if family_member:
+        subject = family_member
+        subject_label = "Patient (family member)"
+    else:
+        subject = patient
+        subject_label = "Patient"
+
     age = ""
-    if patient.get("date_of_birth"):
+    if subject.get("date_of_birth"):
         try:
-            born = datetime.strptime(patient["date_of_birth"], "%Y-%m-%d")
+            born = datetime.strptime(subject["date_of_birth"], "%Y-%m-%d")
             age = f", Age: {(datetime.utcnow() - born).days // 365}"
         except ValueError:
             pass
-    patient_profile = f"Name: {patient.get('full_name', 'Unknown')}{age}, Gender: {patient.get('gender', 'Not specified')}"
+    patient_profile = f"{subject_label} — Name: {subject.get('full_name', 'Unknown')}{age}, Gender: {subject.get('gender', 'Not specified')}"
+    if family_member:
+        patient_profile += (
+            f", Relationship: {family_member.get('relationship', 'family member')}"
+            f"\nAccount holder: {patient.get('full_name', 'Unknown')} (the family member is a dependent on this account)"
+        )
 
     vitals = data.get("vitals", [])
     vitals_text = "No recent vitals." if not vitals else "\n".join(
@@ -39,38 +55,43 @@ def _format_patient_summary_prompt(data: dict) -> str:
         for v in vitals
     )
 
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
+    def _is_past(a: dict) -> bool:
+        return (a.get("appointment_date") or "") < today_str
+
+    def _format_doc_appt(a: dict) -> str:
+        duration = ""
+        if a.get("actual_start_time") and a.get("actual_end_time"):
+            try:
+                s = datetime.fromisoformat(a["actual_start_time"])
+                e = datetime.fromisoformat(a["actual_end_time"])
+                duration = f", duration: {int((e - s).total_seconds() / 60)} min"
+            except (ValueError, TypeError):
+                pass
+        return (
+            f"- {a.get('appointment_date', '?')}: {a.get('type', '?')} — {a.get('status', '?')}{duration}"
+            + (f" | Notes: {a['notes']}" if a.get("notes") else "")
+            + (f" | Reason: {a['reason']}" if a.get("reason") else "")
+        )
+
+    def _format_other_appt(a: dict) -> str:
+        doc = a.get("doctors", {})
+        doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
+        specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
+        return f"- {a.get('appointment_date', '?')}: {a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}"
+
     doc_appts = data.get("doctor_appointments", [])
-    if not doc_appts:
-        doc_appt_text = "No previous appointments with you."
-    else:
-        lines = []
-        for a in doc_appts:
-            duration = ""
-            if a.get("actual_start_time") and a.get("actual_end_time"):
-                try:
-                    s = datetime.fromisoformat(a["actual_start_time"])
-                    e = datetime.fromisoformat(a["actual_end_time"])
-                    duration = f", duration: {int((e - s).total_seconds() / 60)} min"
-                except (ValueError, TypeError):
-                    pass
-            lines.append(
-                f"- {a.get('appointment_date', '?')}: {a.get('type', '?')} — {a.get('status', '?')}{duration}"
-                + (f" | Notes: {a['notes']}" if a.get("notes") else "")
-                + (f" | Reason: {a['reason']}" if a.get("reason") else "")
-            )
-        doc_appt_text = "\n".join(lines)
+    past_doc_appts = [a for a in doc_appts if _is_past(a)]
+    upcoming_doc_appts = [a for a in doc_appts if not _is_past(a)]
+    past_doc_appt_text = "No past appointments with you." if not past_doc_appts else "\n".join(_format_doc_appt(a) for a in past_doc_appts)
+    upcoming_doc_appt_text = "No upcoming appointments with you." if not upcoming_doc_appts else "\n".join(_format_doc_appt(a) for a in upcoming_doc_appts)
 
     other_appts = data.get("other_appointments", [])
-    if not other_appts:
-        other_appt_text = "No visits to other doctors recently."
-    else:
-        lines = []
-        for a in other_appts:
-            doc = a.get("doctors", {})
-            doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
-            specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
-            lines.append(f"- {a.get('appointment_date', '?')}: {a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}")
-        other_appt_text = "\n".join(lines)
+    past_other_appts = [a for a in other_appts if _is_past(a)]
+    upcoming_other_appts = [a for a in other_appts if not _is_past(a)]
+    past_other_appt_text = "No past visits to other doctors." if not past_other_appts else "\n".join(_format_other_appt(a) for a in past_other_appts)
+    upcoming_other_appt_text = "No upcoming visits to other doctors." if not upcoming_other_appts else "\n".join(_format_other_appt(a) for a in upcoming_other_appts)
 
     doc_rx = data.get("doctor_prescriptions", [])
     if not doc_rx:
@@ -114,10 +135,13 @@ def _format_patient_summary_prompt(data: dict) -> str:
         records_text = "\n".join(lines)
 
     return DOCTOR_PATIENT_SUMMARY_USER.format(
+        today_date=today_str,
         patient_profile=patient_profile,
         vitals=vitals_text,
-        doctor_appointments=doc_appt_text,
-        other_appointments=other_appt_text,
+        past_doctor_appointments=past_doc_appt_text,
+        upcoming_doctor_appointments=upcoming_doc_appt_text,
+        past_other_appointments=past_other_appt_text,
+        upcoming_other_appointments=upcoming_other_appt_text,
         doctor_prescriptions=doc_rx_text,
         all_active_prescriptions=all_rx_text,
         health_records=records_text,
@@ -151,10 +175,14 @@ def _parse_patient_summary(raw: str) -> dict | None:
     return result
 
 
-async def generate_patient_summary(doctor_id: str, patient_id: str) -> PatientSummaryResponse:
-    """Generate AI patient briefing for a doctor."""
+async def generate_patient_summary(doctor_id: str, patient_id: str, family_member_id: str | None = None) -> PatientSummaryResponse:
+    """Generate AI patient briefing for a doctor.
+
+    When family_member_id is provided, the briefing is generated for that family member
+    instead of the account holder (patient).
+    """
     try:
-        data = await get_doctor_patient_data(doctor_id, patient_id)
+        data = await get_doctor_patient_data(doctor_id, patient_id, family_member_id)
 
         user_prompt = _format_patient_summary_prompt(data)
 

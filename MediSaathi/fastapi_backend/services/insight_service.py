@@ -27,26 +27,28 @@ def _format_patient_prompt(data: dict) -> str:
 
     user_profile = f"Name: {user.get('full_name', 'Unknown')}{age}, Gender: {user.get('gender', 'Not specified')}"
 
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
     vitals = data.get("vitals", [])
     vitals_text = "No recent vitals recorded." if not vitals else "\n".join(
         f"- {v.get('type', '?')}: {v.get('value', '?')} {v.get('unit', '')} (recorded: {v.get('recorded_at', '?')[:10]})"
         for v in vitals
     )
 
+    def _format_appt_line(a: dict) -> str:
+        doc = a.get("doctors", {})
+        doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
+        specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
+        return (
+            f"- {a.get('appointment_date', '?')} {a.get('appointment_time', '')}: "
+            f"{a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}"
+        )
+
     appointments = data.get("appointments", [])
-    if not appointments:
-        appt_text = "No recent appointments."
-    else:
-        lines = []
-        for a in appointments:
-            doc = a.get("doctors", {})
-            doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
-            specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
-            lines.append(
-                f"- {a.get('appointment_date', '?')} {a.get('appointment_time', '')}: "
-                f"{a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}"
-            )
-        appt_text = "\n".join(lines)
+    past_appts = [a for a in appointments if (a.get("appointment_date") or "") < today_str]
+    upcoming_appts = [a for a in appointments if (a.get("appointment_date") or "") >= today_str]
+    past_appt_text = "No past appointments." if not past_appts else "\n".join(_format_appt_line(a) for a in past_appts)
+    upcoming_appt_text = "No upcoming appointments." if not upcoming_appts else "\n".join(_format_appt_line(a) for a in upcoming_appts)
 
     prescriptions = data.get("prescriptions", [])
     if not prescriptions:
@@ -89,9 +91,11 @@ def _format_patient_prompt(data: dict) -> str:
         wallet_text = f"Total spent: ${total:.0f}. Breakdown: {cat_text}"
 
     return PATIENT_INSIGHT_USER.format(
+        today_date=today_str,
         user_profile=user_profile,
         vitals=vitals_text,
-        appointments=appt_text,
+        past_appointments=past_appt_text,
+        upcoming_appointments=upcoming_appt_text,
         prescriptions=rx_text,
         health_records=records_text,
         wallet=wallet_text,
@@ -268,26 +272,28 @@ def _format_family_member_prompt(data: dict) -> str:
         f"Relationship: {member.get('relationship', 'family member')}"
     )
 
+    today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
     vitals = data.get("vitals", [])
     vitals_text = "No recent vitals recorded." if not vitals else "\n".join(
         f"- {v.get('type', '?')}: {v.get('value', '?')} {v.get('unit', '')} (recorded: {v.get('recorded_at', '?')[:10]})"
         for v in vitals
     )
 
+    def _format_appt_line(a: dict) -> str:
+        doc = a.get("doctors", {})
+        doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
+        specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
+        return (
+            f"- {a.get('appointment_date', '?')} {a.get('appointment_time', '')}: "
+            f"{a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}"
+        )
+
     appointments = data.get("appointments", [])
-    if not appointments:
-        appt_text = "No recent appointments."
-    else:
-        lines = []
-        for a in appointments:
-            doc = a.get("doctors", {})
-            doc_name = doc.get("users", {}).get("full_name", "Unknown") if isinstance(doc, dict) else "Unknown"
-            specialty = doc.get("specialty", "") if isinstance(doc, dict) else ""
-            lines.append(
-                f"- {a.get('appointment_date', '?')} {a.get('appointment_time', '')}: "
-                f"{a.get('type', '?')} with Dr. {doc_name} ({specialty}) — {a.get('status', '?')}"
-            )
-        appt_text = "\n".join(lines)
+    past_appts = [a for a in appointments if (a.get("appointment_date") or "") < today_str]
+    upcoming_appts = [a for a in appointments if (a.get("appointment_date") or "") >= today_str]
+    past_appt_text = "No past appointments." if not past_appts else "\n".join(_format_appt_line(a) for a in past_appts)
+    upcoming_appt_text = "No upcoming appointments." if not upcoming_appts else "\n".join(_format_appt_line(a) for a in upcoming_appts)
 
     records = data.get("health_records", [])
     records_text = "No recent health records." if not records else "\n".join(
@@ -296,9 +302,11 @@ def _format_family_member_prompt(data: dict) -> str:
     )
 
     return PATIENT_INSIGHT_USER.format(
+        today_date=today_str,
         user_profile=user_profile,
         vitals=vitals_text,
-        appointments=appt_text,
+        past_appointments=past_appt_text,
+        upcoming_appointments=upcoming_appt_text,
         prescriptions="Not applicable for family members.",
         health_records=records_text,
         wallet="Not applicable for family members.",

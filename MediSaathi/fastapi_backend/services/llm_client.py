@@ -18,7 +18,7 @@ def generate_completion(
     system_prompt: str,
     user_prompt: str,
     max_tokens: int = 1024,
-    temperature: float = 0.4,
+    temperature: float = 0.3,
 ) -> str:
     """Send a chat completion request to Groq and return the response text."""
     client = get_groq()

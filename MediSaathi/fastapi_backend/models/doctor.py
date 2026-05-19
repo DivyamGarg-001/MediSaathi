@@ -4,6 +4,7 @@ from pydantic import BaseModel
 class PatientSummaryRequest(BaseModel):
     doctor_id: str  # doctors.id (NOT user_id)
     patient_id: str  # patient's user_id
+    family_member_id: str | None = None  # optional: brief for a specific family member
 
 
 class DoctorInsightsRequest(BaseModel):

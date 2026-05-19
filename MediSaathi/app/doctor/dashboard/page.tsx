@@ -526,8 +526,10 @@ export default function DoctorDashboard() {
                   </div>
                 )}
               </div>
-              <Button variant="ghost" size="sm">
-                <Settings className="h-4 w-4" />
+              <Button variant="ghost" size="sm" asChild>
+                <Link href="/doctor/settings">
+                  <Settings className="h-4 w-4" />
+                </Link>
               </Button>
             </div>
           </div>
@@ -629,8 +631,13 @@ export default function DoctorDashboard() {
                             </Badge>
                           </div>
                           <div className="flex-1">
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <p className="font-medium">{appointment.patient?.full_name || 'Patient'}</p>
+                              {appointment.family_members && (
+                                <Badge variant="secondary" className="text-[10px]">
+                                  For: {appointment.family_members.full_name} ({appointment.family_members.relationship})
+                                </Badge>
+                              )}
                               {appointment.is_urgent && (
                                 <AlertTriangle className="h-4 w-4 text-red-500" />
                               )}
@@ -720,6 +727,20 @@ export default function DoctorDashboard() {
                                     ? `Last visit: ${new Date(patient.last_appointment + 'T00:00:00').toLocaleDateString()}`
                                     : 'No visits'}
                               </p>
+                              {patient.family_members?.length > 0 && (
+                                <div className="flex flex-wrap gap-1 mt-1.5">
+                                  {patient.family_members.slice(0, 3).map((fm: any) => (
+                                    <Badge key={fm.id} variant="secondary" className="text-[10px] font-normal">
+                                      Also seen: {fm.full_name} ({fm.relationship})
+                                    </Badge>
+                                  ))}
+                                  {patient.family_members.length > 3 && (
+                                    <Badge variant="secondary" className="text-[10px] font-normal">
+                                      +{patient.family_members.length - 3} more
+                                    </Badge>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           </div>
                           <div className="flex gap-1">

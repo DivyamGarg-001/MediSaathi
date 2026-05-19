@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from fastapi_backend.config import ALLOWED_ORIGINS
-from fastapi_backend.routers import patient_insights, doctor_insights, hospital_insights
+from fastapi_backend.routers import patient_insights, doctor_insights, hospital_insights, records
 
 app = FastAPI(
     title="MediSaathi AI Backend",
@@ -23,6 +23,7 @@ app.add_middleware(
 app.include_router(patient_insights.router)
 app.include_router(doctor_insights.router)
 app.include_router(hospital_insights.router)
+app.include_router(records.router)
 
 
 @app.get("/health")

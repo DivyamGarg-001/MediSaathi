@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/doctor", tags=["doctor-ai"])
 @router.post("/patient-summary/generate")
 async def api_generate_patient_summary(req: PatientSummaryRequest):
     """Generate AI patient briefing for a doctor before consultation."""
-    return await generate_patient_summary(req.doctor_id, req.patient_id)
+    return await generate_patient_summary(req.doctor_id, req.patient_id, req.family_member_id)
 
 
 @router.post("/insights/generate")

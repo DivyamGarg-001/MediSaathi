@@ -300,10 +300,10 @@ export class DoctorService {
     try {
       const [profileResult, appointmentsResult, prescriptionsResult, recordsResult, vitalsResult] = await Promise.all([
         supabase.from('users').select('id, full_name, email, phone, date_of_birth, gender, avatar_url, address').eq('id', patientId).single(),
-        supabase.from('appointments').select('id, appointment_date, appointment_time, status, type, reason, notes, is_urgent, fee, created_at').eq('patient_id', patientId).eq('doctor_id', doctorId).order('appointment_date', { ascending: false }),
+        supabase.from('appointments').select('id, appointment_date, appointment_time, status, type, reason, notes, is_urgent, fee, family_member_id, family_members:family_member_id(id, full_name, relationship), created_at').eq('patient_id', patientId).eq('doctor_id', doctorId).order('appointment_date', { ascending: false }),
         supabase.from('prescriptions').select('id, medications, instructions, valid_until, status, created_at').eq('patient_id', patientId).eq('doctor_id', doctorId).order('created_at', { ascending: false }),
-        supabase.from('health_records').select('id, title, type, file_url, date_recorded, ai_summary, is_critical, created_at').eq('user_id', patientId).order('date_recorded', { ascending: false }),
-        supabase.from('vital_signs').select('id, type, value, unit, notes, recorded_at').eq('user_id', patientId).order('recorded_at', { ascending: false }).limit(50),
+        supabase.from('health_records').select('id, title, type, file_url, file_type, date_recorded, ai_summary, tags, is_critical, family_member_id, content, family_members:family_member_id(id, full_name, relationship), created_at').eq('user_id', patientId).order('date_recorded', { ascending: false }),
+        supabase.from('vital_signs').select('id, type, value, unit, notes, family_member_id, family_members:family_member_id(id, full_name, relationship), recorded_at').eq('user_id', patientId).order('recorded_at', { ascending: false }).limit(50),
       ])
 
       if (profileResult.error) throw profileResult.error

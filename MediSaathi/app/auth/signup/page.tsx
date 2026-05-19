@@ -13,6 +13,7 @@ import { SiteHeader } from '@/components/site-header'
 import { SiteFooter } from '@/components/site-footer'
 import Link from 'next/link'
 import { Activity, Eye, EyeOff } from 'lucide-react'
+import { normalizePhone } from '@/lib/utils/phone'
 
 export default function SignUpPage() {
   const { signInWithGoogle, signUpWithEmail } = useAuth()
@@ -29,16 +30,28 @@ export default function SignUpPage() {
 
   const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
-    setIsLoading(true)
     setError('')
 
     const formData = new FormData(e.currentTarget)
+
+    let normalizedPhone: string | undefined
+    if (activeTab === 'hospital') {
+      const rawPhone = formData.get('phone') as string
+      const result = normalizePhone(rawPhone)
+      if (!result) {
+        setError('Enter a valid Indian mobile number (10 digits, starts with 6/7/8/9)')
+        return
+      }
+      normalizedPhone = result
+    }
+
+    setIsLoading(true)
     const result = await signUpWithEmail({
       email: formData.get('email') as string,
       password: formData.get('password') as string,
       full_name: formData.get('name') as string,
       user_type: activeTab as 'patient' | 'doctor' | 'hospital',
-      phone: activeTab === 'hospital' ? formData.get('phone') as string : undefined,
+      phone: normalizedPhone,
       specialty: activeTab === 'doctor' ? formData.get('specialty') as string : undefined,
       license_number: activeTab !== 'patient' ? formData.get('license') as string : undefined,
       address: activeTab === 'hospital' ? formData.get('address') as string : undefined,
@@ -159,7 +172,8 @@ export default function SignUpPage() {
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="hosp-phone">Phone</Label>
-                      <Input name="phone" id="hosp-phone" placeholder="+91 9876543210" required />
+                      <Input name="phone" id="hosp-phone" type="tel" placeholder="9876543210" required />
+                      <p className="text-xs text-muted-foreground">10-digit Indian mobile. +91 is optional and added on save.</p>
                     </div>
                     <div className="space-y-2">
                       <Label htmlFor="hosp-address">Address</Label>

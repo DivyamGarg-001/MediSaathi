@@ -42,6 +42,8 @@ export async function GET(request: NextRequest) {
           notes,
           type,
           is_urgent,
+          family_member_id,
+          family_members:family_member_id (id, full_name, relationship),
           patient:patient_id (
             id,
             full_name,
